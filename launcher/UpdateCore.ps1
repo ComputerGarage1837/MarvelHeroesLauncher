@@ -11,10 +11,21 @@ function Get-SafePath([string]$Root,[string]$Relative) {
  foreach($part in @('')+$parts){if($part){$walk=Join-Path $walk $part};if(Test-Path -LiteralPath $walk){if((Get-Item -LiteralPath $walk -Force).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Updates cannot traverse links or junctions.'}}}
  return $target
 }
+function Move-UpdateFile([string]$Source,[string]$Destination){
+ for($attempt=0;$attempt -lt 40;$attempt++){
+  try{[IO.File]::Move($Source,$Destination,$true);return}
+  catch{if($attempt -eq 39){throw "Could not replace '$Destination'. Close programs using this file and check folder permissions. $($_.Exception.GetBaseException().Message)"};Start-Sleep -Milliseconds 100}
+ }
+}
+function Read-SharedText([string]$Path){
+ $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+ $reader=[IO.StreamReader]::new($stream)
+ try{return $reader.ReadToEnd()}finally{$reader.Dispose()}
+}
 function Write-JsonAtomic($Value,[string]$Path){
  $temp=$Path+'.tmp'
  [IO.File]::WriteAllText($temp,($Value|ConvertTo-Json -Depth 20),[Text.UTF8Encoding]::new($false))
- [IO.File]::Move($temp,$Path,$true)
+ Move-UpdateFile $temp $Path
 }
 function Assert-Hash([string]$Path,[string]$Expected){
  if($Expected -notmatch '^[a-fA-F0-9]{64}$' -or (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ne $Expected){throw 'Update checksum verification failed.'}
@@ -75,12 +86,13 @@ function Install-Transaction([string]$Root,[string]$Stage,[string]$Transaction,$
   foreach($file in $Files){
    $destination=Get-SafePath $Root $file.path;$source=Get-SafePath $Stage $file.path
    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination))|Out-Null
-   $temp=$destination+'.mh-update-temp';[IO.File]::Copy($source,$temp,$true);[IO.File]::Move($temp,$destination,$true)
+   $temp=$destination+'.mh-update-temp';[IO.File]::Copy($source,$temp,$true);Move-UpdateFile $temp $destination
    $count++;if(Get-Command Set-TransferStatus -ErrorAction SilentlyContinue){Set-TransferStatus 'Installing files' $count $Files.Count};if($count -eq $FailAfter){throw 'Simulated interruption'}
   }
   Write-JsonAtomic @{status='complete';files=$records} $journalPath
  } catch {Restore-Update $Root $Transaction;throw}
 }
+
 
 
 

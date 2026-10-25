@@ -1,6 +1,6 @@
 function Set-TransferStatus([string]$Message,[long]$Done=0,[long]$Total=0){
  $percent=if($Total -gt 0){[math]::Min(100,[math]::Floor(100.0*$Done/$Total))}else{-1}
- Write-JsonAtomic @{message=$Message;done=$Done;total=$Total;percent=$percent} (Join-Path $PSScriptRoot '.updates/progress.json')
+ try{Write-JsonAtomic @{message=$Message;done=$Done;total=$Total;percent=$percent} (Join-Path $script:ProgressRoot '.updates/progress.json')}catch{ } # Progress is cosmetic; never abort an installation for a display refresh.
 }
 function Receive-Asset([string]$Url,[string]$Path,[string]$Hash){
  if(Test-Path -LiteralPath $Path){try{Assert-Hash $Path $Hash;return}catch{}}
@@ -29,3 +29,4 @@ function Receive-Asset([string]$Url,[string]$Path,[string]$Hash){
   [IO.File]::Move($part,$Path,$true)
  } finally {if($inputStream){$inputStream.Dispose()};if($outputStream){$outputStream.Dispose()};if($response){$response.Dispose()};$request.Dispose();$http.Dispose()}
 }
+

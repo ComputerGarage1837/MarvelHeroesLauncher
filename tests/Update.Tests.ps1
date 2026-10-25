@@ -25,4 +25,8 @@ $badFiles=@([pscustomobject]@{path='Play.ps1';sha256=('0'*64);size=$files[0].siz
 $rejected=$false;try{Expand-VerifiedPackage $zip (Join-Path $testRoot 'bad-hash') $badFiles}catch{$rejected=$true};Check $rejected 'Corrupt file checksum rejected before installation'
 $badZip=Join-Path $testRoot 'traversal.zip';$z=[IO.Compression.ZipFile]::Open($badZip,'Create');$e=$z.CreateEntry('../escape.txt');$w=[IO.StreamWriter]::new($e.Open());$w.Write('bad');$w.Dispose();$z.Dispose()
 $rejected=$false;try{Expand-VerifiedPackage $badZip (Join-Path $testRoot 'bad-path') $files}catch{$rejected=$true};Check $rejected 'Archive traversal rejected'
+$statusPath=Join-Path $testRoot 'progress.json';Write-JsonAtomic @{percent=0} $statusPath
+$held=[IO.File]::Open($statusPath,'Open','Read','ReadWrite')
+$release=[powershell]::Create();$null=$release.AddScript('param($handle) Start-Sleep -Milliseconds 500; $handle.Dispose()').AddArgument($held);$pendingRelease=$release.BeginInvoke()
+try{Write-JsonAtomic @{percent=100} $statusPath;Check ((Read-SharedText $statusPath|ConvertFrom-Json).percent -eq 100) 'Progress replacement retries temporary Windows file locks'}finally{$release.EndInvoke($pendingRelease);$release.Dispose();$held.Dispose()}
 Write-Output 'All updater tests passed.'

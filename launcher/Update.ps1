@@ -1,8 +1,38 @@
-param([ValidateSet('Check','Update','InstallGame')][string]$Action='Check')
+param([ValidateSet('Check','Update','InstallGame')][string]$Action='Check',[string]$TargetRoot=$PSScriptRoot,[switch]$HostUI,[int]$ParentProcessId=0,[switch]$ValidateHost)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'UpdateCore.ps1')
 . (Join-Path $PSScriptRoot 'Transfer.ps1')
-$root=$PSScriptRoot;$updates=Get-SafePath $root '.updates';[IO.Directory]::CreateDirectory($updates)|Out-Null
+$root=[IO.Path]::GetFullPath($TargetRoot);$script:ProgressRoot=$root;$updates=Get-SafePath $root '.updates';[IO.Directory]::CreateDirectory($updates)|Out-Null
+if($HostUI){
+ Add-Type -AssemblyName PresentationFramework
+ [xml]$markup='<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Title="Marvel Heroes Update" Width="650" Height="310" WindowStartupLocation="CenterScreen" Background="#000000" Foreground="#E8C979" ResizeMode="NoResize"><StackPanel Margin="32"><TextBlock Text="UPDATING MARVEL HEROES" FontSize="23" FontWeight="Bold"/><TextBlock Name="Status" Text="Closing launcher before installing..." Foreground="White" TextWrapping="Wrap" Margin="0,24,0,16"/><ProgressBar Name="Progress" Height="12" Foreground="#D4AF37" Background="#161616" IsIndeterminate="True"/><TextBlock Name="Detail" Text="The launcher will reopen when the update finishes." Foreground="#AAAAAA" Margin="0,14,0,14" TextWrapping="Wrap"/><Button Name="Reopen" Content="Reopen launcher" Visibility="Collapsed" Height="32"/></StackPanel></Window>'
+ $hostWindow=[Windows.Markup.XamlReader]::Load([Xml.XmlNodeReader]::new($markup))
+ $status=$hostWindow.FindName('Status');$progress=$hostWindow.FindName('Progress');$detail=$hostWindow.FindName('Detail');$reopen=$hostWindow.FindName('Reopen')
+ $hostState=@{process=$null;finished=$false};$workerScript=$PSCommandPath;$shell=(Get-Process -Id $PID).Path;$waiting=[Diagnostics.Stopwatch]::StartNew()
+ $reopen.Add_Click({Start-Process $shell -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $root 'Play.ps1')) -WindowStyle Hidden;$hostWindow.Close()})
+ $timer=[Windows.Threading.DispatcherTimer]::new();$timer.Interval=[TimeSpan]::FromMilliseconds(250)
+ $timer.Add_Tick({
+  try{
+   if(-not $hostState.process){
+    if($ParentProcessId -and (Get-Process -Id $ParentProcessId -ErrorAction SilentlyContinue)){if($waiting.Elapsed.TotalSeconds -gt 30){throw 'The launcher has not closed. Close it, then retry the update.'};return}
+    $arguments='-NoProfile -ExecutionPolicy Bypass -File "{0}" -TargetRoot "{1}" -Action {2}' -f $workerScript,$root,$Action
+    $hostState.process=Start-Process $shell -ArgumentList $arguments -WindowStyle Hidden -RedirectStandardOutput (Join-Path $updates 'result.txt') -RedirectStandardError (Join-Path $updates 'error.txt') -PassThru
+   }
+   if(-not $hostState.process.HasExited){
+    try{$p=Read-SharedText (Join-Path $updates 'progress.json')|ConvertFrom-Json;$status.Text=$p.message;$progress.IsIndeterminate=$p.percent -lt 0;if($p.percent -ge 0){$progress.Value=$p.percent;$detail.Text=('{0}% — {1:N1} MB / {2:N1} MB' -f $p.percent,($p.done/1MB),($p.total/1MB))}}catch{}
+    return
+   }
+   $timer.Stop();$hostState.finished=$true
+   if($hostState.process.ExitCode -in @(0,10)){Start-Process $shell -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $root 'Play.ps1')) -WindowStyle Hidden;$hostWindow.Close();return}
+   $failure=Get-Content (Join-Path $updates 'result.txt') -Tail 1
+   if(-not $failure){$failure='Update could not complete. Please retry.'};throw $failure
+  }catch{$timer.Stop();$hostState.finished=$true;$status.Text=$_.Exception.Message;$progress.IsIndeterminate=$false;$detail.Text='Update incomplete. Reopen the launcher to retry. Play remains locked until updates are complete.';$reopen.Visibility='Visible'}
+ })
+ $hostWindow.Add_Closing({param($sender,$eventArgs) if(-not $hostState.finished -and $hostState.process -and -not $hostState.process.HasExited){$eventArgs.Cancel=$true}})
+ $hostWindow.Add_Closed({$timer.Stop()})
+ if($ValidateHost){$hostWindow.Measure([Windows.Size]::new(650,310));$hostWindow.Arrange([Windows.Rect]::new(0,0,650,310));Write-Output 'Updater window validated.';exit 0}
+ $timer.Start();$null=$hostWindow.ShowDialog();exit 0
+}
 $lock=$null;$gameLock=$null;$recoveryComplete=$false
 try {
  $lock=[IO.File]::Open((Join-Path $updates 'update.lock'),'OpenOrCreate','ReadWrite','None')
