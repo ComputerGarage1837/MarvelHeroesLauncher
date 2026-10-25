@@ -7,14 +7,31 @@ Run Play.bat using PowerShell 7 for Windows.
 Locate existing game: select the folder containing your Win64 client.
 Choose folder: select a dedicated folder for a future full-game installation.
 Install Game becomes available when the host publishes the full client.
-Game settings: resolution and window/fullscreen controls.
+Game settings: automatic monitor resolution, manual resolutions, windowed,
+fullscreen, and borderless modes. Borderless fills your selected monitor.
+Your choices are saved separately for each Windows user in Local AppData.
+The first run imports any existing LauncherSettings.json choices.
+They are outside launcher update packages and are not overwritten by updates.
+The welcome guide lets you choose a game folder, create a desktop shortcut,
+and create an account. Game settings can recreate the shortcut at any time.
 Create account: secure registration; sign in inside the game.
+Server status / Login help: checks the configuration route, secure login route,
+and game port separately. Select the game's login error for an explanation.
+These checks do not submit credentials or attempt to log in.
 Play: the launcher closes automatically after the game window opens.
 
 Updates are checked at startup. Click Install updates when available.
 Download progress is displayed. Downloads are verified before installation.
 Interrupted downloads can resume. Failed installations roll back changed files.
 The launcher reopens after updating itself. Close the game before updating.
+Existing display configuration and the game executable (including its local
+compatibility fixes) are preserved during game updates. Game settings >
+Protect additional client fixes lets you select other files to keep.
+This creates .mh-protected-files.json in your game folder with exact paths.
+An update never overwrites these existing files, but can install missing ones.
+Unrecognized local changes stop a patch with an explanation rather than being
+replaced. Protect a deliberate fix or request a compatible patch from the host.
+Preserved files are recorded in .mh-updates/preserved-customizations.json.
 
 Repository and releases:
 https://github.com/ComputerGarage1837/MarvelHeroesLauncher

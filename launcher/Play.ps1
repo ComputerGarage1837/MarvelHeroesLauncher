@@ -1,24 +1,60 @@
-param([switch]$ValidateOnly,[string]$PreviewPath,[switch]$PreviewUpdate)
+param([switch]$ValidateOnly,[string]$PreviewPath,[switch]$PreviewUpdate,[switch]$PreviewSetup,[switch]$PreviewSettings)
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase,System.Windows.Forms,System.Drawing
 . (Join-Path $PSScriptRoot 'UpdateCore.ps1')
 Set-StrictMode -Off
-$root=$PSScriptRoot;$settingsPath=Join-Path $root 'LauncherSettings.json'
-$choices=@('1920 x 1080  |  16:9','2560 x 1440  |  16:9','3840 x 2160  |  16:9','2560 x 1080  |  Ultrawide 21:9','3440 x 1440  |  Ultrawide 21:9','3840 x 1600  |  Ultrawide 21:9','5120 x 2160  |  Ultrawide 21:9','3840 x 1080  |  Super ultrawide 32:9','5120 x 1440  |  Super ultrawide 32:9','7680 x 2160  |  Super ultrawide 32:9')
-$saved=@{Resolution=$choices[0];Mode='Windowed';ServerAddress='myfamilyflix.duckdns.org';ClientPath=(Join-Path $root 'Client')}
-if(Test-Path $settingsPath){try{$old=Get-Content $settingsPath -Raw|ConvertFrom-Json;if($old.Resolution -in $choices){$saved.Resolution=$old.Resolution};if($old.Mode -in @('Windowed','Fullscreen')){$saved.Mode=$old.Mode};if($old.PSObject.Properties['ClientPath'] -and $old.ClientPath){$saved.ClientPath=$old.ClientPath}}catch{}}
-function Save-Settings {$saved|ConvertTo-Json|Set-Content $settingsPath}
+$root=$PSScriptRoot
+$choices=@('Automatic (monitor resolution)','1280 x 720  |  16:9','1920 x 1080  |  16:9','2560 x 1440  |  16:9','3840 x 2160  |  16:9','2560 x 1080  |  Ultrawide 21:9','3440 x 1440  |  Ultrawide 21:9','3840 x 1600  |  Ultrawide 21:9','5120 x 2160  |  Ultrawide 21:9','3840 x 1080  |  Super ultrawide 32:9','5120 x 1440  |  Super ultrawide 32:9','7680 x 2160  |  Super ultrawide 32:9')
+$saved=Get-PlayerSettings $root
+if($saved.Resolution -notin $choices){$choices+=,[string]$saved.Resolution}
+function Save-Settings {Save-PlayerSettings $root $saved}
+function Open-AccountForm {Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $root 'CreateAccount.ps1')) -WindowStyle Hidden}
+function New-LauncherShortcut {
+ $desktop=[Environment]::GetFolderPath('DesktopDirectory');$shell=New-Object -ComObject WScript.Shell
+ $link=$shell.CreateShortcut((Join-Path $desktop 'Marvel Heroes Omega.lnk'))
+ $link.TargetPath=(Get-Process -Id $PID).Path;$link.Arguments='-NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $root 'Play.ps1');$link.WorkingDirectory=$root;$link.Description='Play Marvel Heroes Omega';$link.Save()
+ [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($link);[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+}
+function Show-FirstTimeSetup {
+ $setup=[Windows.Forms.Form]::new();$setup.Text='Welcome to Marvel Heroes';$setup.ClientSize=[Drawing.Size]::new(610,445);$setup.StartPosition='CenterScreen';$setup.FormBorderStyle='FixedDialog';$setup.MaximizeBox=$false;$setup.BackColor=[Drawing.Color]::Black;$setup.ForeColor=[Drawing.Color]::WhiteSmoke;$setup.Font=[Drawing.Font]::new('Segoe UI',11)
+ $intro=[Windows.Forms.Label]::new();$intro.Text='GET READY TO ASSEMBLE';$intro.Font=[Drawing.Font]::new('Segoe UI',20,[Drawing.FontStyle]::Bold);$intro.ForeColor=[Drawing.Color]::FromArgb(212,175,98);$intro.SetBounds(24,20,560,40);$setup.Controls.Add($intro)
+ $steps=[Windows.Forms.Label]::new();$steps.Text='1. Choose a game folder, or select your existing game installation.';$steps.SetBounds(24,80,560,50);$setup.Controls.Add($steps)
+ $location=[Windows.Forms.TextBox]::new();$location.ReadOnly=$true;$location.Text=$saved.ClientPath;$location.SetBounds(24,130,420,30);$setup.Controls.Add($location)
+ $browse=[Windows.Forms.Button]::new();$browse.Text='Browse...';$browse.SetBounds(456,127,125,34);$setup.Controls.Add($browse)
+ $browse.Add_Click({$picker=[Windows.Forms.FolderBrowserDialog]::new();$picker.Description='Choose your new game folder or locate your existing game';$picker.UseDescriptionForTitle=$true;$picker.SelectedPath=$location.Text;try{if($picker.ShowDialog() -eq 'OK'){$chosen=[IO.Path]::GetFullPath($picker.SelectedPath);if($chosen.TrimEnd('\') -eq [IO.Path]::GetPathRoot($chosen).TrimEnd('\') -or $chosen.TrimEnd('\') -eq $root.TrimEnd('\')){[void][Windows.Forms.MessageBox]::Show('Choose a dedicated game folder.')}else{$location.Text=$chosen}}}finally{$picker.Dispose()}})
+ $desktop=[Windows.Forms.CheckBox]::new();$desktop.Text='2. Create a desktop shortcut';$desktop.Checked=$true;$desktop.SetBounds(24,184,560,30);$setup.Controls.Add($desktop)
+ $account=[Windows.Forms.Label]::new();$account.Text='3. Create an account, then sign in inside the game with your email and password. Already registered? Use your existing account.';$account.SetBounds(24,232,560,58);$setup.Controls.Add($account)
+ $register=[Windows.Forms.Button]::new();$register.Text='Create account';$register.SetBounds(24,300,180,34);$setup.Controls.Add($register);$register.Add_Click({Open-AccountForm})
+ $note=[Windows.Forms.Label]::new();$note.Text='Your monitor resolution is detected automatically. You can change display settings from the launcher.';$note.ForeColor=[Drawing.Color]::Silver;$note.SetBounds(24,349,560,48);$setup.Controls.Add($note)
+ $finish=[Windows.Forms.Button]::new();$finish.Text='Finish setup';$finish.SetBounds(400,400,180,34);$finish.BackColor=[Drawing.Color]::FromArgb(212,175,98);$finish.ForeColor=[Drawing.Color]::Black;$setup.Controls.Add($finish)
+ $finish.Add_Click({try{$saved.ClientPath=$location.Text;if($desktop.Checked){New-LauncherShortcut};$saved.SetupComplete=$true;Save-Settings;$setup.Close()}catch{$note.Text='Setup could not finish: '+$_.Exception.Message}})
+ if($ValidateOnly){if($PreviewSetup -and $PreviewPath){Export-FormPreview $setup $PreviewPath};$setup.Dispose();return}
+ [void]$setup.ShowDialog();$setup.Dispose();Refresh-Game
+}
 $launcherLock=$null
 if(-not $ValidateOnly){try{$launcherLock=[IO.File]::Open((Join-Path $root '.launcher.lock'),'OpenOrCreate','ReadWrite','None')}catch{[void][System.Windows.MessageBox]::Show('This launcher is already open.','Marvel Heroes');exit 0}}
 [xml]$xaml=Get-Content (Join-Path $root 'Launcher.xaml') -Raw
 $reader=[Xml.XmlNodeReader]::new($xaml);$window=[Windows.Markup.XamlReader]::Load($reader)
-$ui=@{};foreach($name in @('SettingsButton','AccountButton','HeroImage','UpdateSummary','UpdateButton','GameLocation','FolderButton','LocateButton','StatusText','PercentText','Progress','DetailText','PlayButton','VersionLabel','UpdateNotice','UpdateHeading','UpdateCard')){$ui[$name]=$window.FindName($name)}
+$ui=@{};foreach($name in @('SettingsButton','AccountButton','HeroImage','UpdateSummary','UpdateButton','GameLocation','FolderButton','LocateButton','StatusText','PercentText','Progress','DetailText','PlayButton','VersionLabel','UpdateNotice','UpdateHeading','UpdateCard','ConnectionButton')){$ui[$name]=$window.FindName($name)}
 $version=(Get-Content (Join-Path $root 'InstalledVersions.json') -Raw|ConvertFrom-Json).launcher;$ui.VersionLabel.Text='LAUNCHER '+$version
 $script:images=@();foreach($name in @('avengers-endgame.jpg','avengers-infinity-war.jpg')){$bitmap=[Windows.Media.Imaging.BitmapImage]::new();$bitmap.BeginInit();$bitmap.CacheOption='OnLoad';$bitmap.UriSource=[Uri]::new((Join-Path $root "Assets/$name"));$bitmap.EndInit();$bitmap.Freeze();$script:images+=,$bitmap}
 $ui.HeroImage.Source=$script:images[0];$script:filmIndex=0
 $artTimer=[Windows.Threading.DispatcherTimer]::new();$artTimer.Interval=[TimeSpan]::FromSeconds(18);$artTimer.Add_Tick({$script:filmIndex=1-$script:filmIndex;$ui.HeroImage.Source=$script:images[$script:filmIndex]})
 $script:verified=$false;$script:busy=$false;$script:recoveryRequired=$false;$script:worker=$null;$script:workerAction='';$script:available=$false;$script:fullAvailable=$false;$script:installed=$false;$script:restart=$false
 $workerLog=Join-Path $root '.updates/result.txt';$workerError=Join-Path $root '.updates/error.txt';$progressFile=Join-Path $root '.updates/progress.json'
+$connectionState=@{process=$null};$connectionTimer=[Windows.Threading.DispatcherTimer]::new();$connectionTimer.Interval=[TimeSpan]::FromMilliseconds(300)
+function Start-ConnectionCheck {
+ if($connectionState.process -and -not $connectionState.process.HasExited){return}
+ [IO.Directory]::CreateDirectory((Join-Path $root '.updates'))|Out-Null
+ $ui.ConnectionButton.Content='Checking server...'
+ $args='-NoProfile -ExecutionPolicy Bypass -File "{0}" -CheckConnection' -f (Join-Path $root 'StartGame.ps1')
+ $connectionState.process=Start-Process (Get-Process -Id $PID).Path -ArgumentList $args -WindowStyle Hidden -RedirectStandardOutput (Join-Path $root '.updates/connection.json') -RedirectStandardError (Join-Path $root '.updates/connection-error.txt') -PassThru
+ $connectionTimer.Start()
+}
+$connectionTimer.Add_Tick({
+ if(-not $connectionState.process.HasExited){return};$connectionTimer.Stop()
+ try{$report=Read-SharedText (Join-Path $root '.updates/connection.json')|ConvertFrom-Json;$ui.ConnectionButton.Content=if($report.Reachable){'Server reachable  ·  Login help'}else{'Connection problem  ·  Get help'};$ui.ConnectionButton.ToolTip=($report.Checks|ForEach-Object {"$($_.Name): $($_.Message)"}) -join "`n"}catch{$ui.ConnectionButton.Content='Connection check failed  ·  Get help'}
+})
 function Refresh-Game {
  $script:installed=$false
  if(Test-Path -LiteralPath $saved.ClientPath){$script:installed=$null -ne (Get-ChildItem -LiteralPath $saved.ClientPath -Recurse -Filter MarvelHeroesOmega.exe -File -ErrorAction SilentlyContinue|Where-Object {$_.FullName -match '\\Win64\\' -and $_.FullName -notmatch '\\.mh-updates\\'}|Select-Object -First 1)}
@@ -51,21 +87,40 @@ function Select-GameFolder([bool]$Existing){
  $dialog.Dispose()
 }
 $ui.FolderButton.Add_Click({Select-GameFolder $false});$ui.LocateButton.Add_Click({Select-GameFolder $true})
-$ui.SettingsButton.Add_Click({
- $dialog=[System.Windows.Forms.Form]::new();$dialog.Text='Game settings';$dialog.ClientSize=[Drawing.Size]::new(520,300);$dialog.StartPosition='CenterScreen';$dialog.FormBorderStyle='FixedDialog';$dialog.MaximizeBox=$false;$dialog.BackColor=[Drawing.Color]::FromArgb(17,18,22);$dialog.ForeColor=[Drawing.Color]::FromArgb(230,210,157);$dialog.Font=[Drawing.Font]::new('Segoe UI',11)
+function Show-GameSettings {
+ $dialog=[System.Windows.Forms.Form]::new();$dialog.Text='Game settings';$dialog.ClientSize=[Drawing.Size]::new(560,510);$dialog.StartPosition='CenterScreen';$dialog.FormBorderStyle='FixedDialog';$dialog.MaximizeBox=$false;$dialog.BackColor=[Drawing.Color]::Black;$dialog.ForeColor=[Drawing.Color]::FromArgb(230,210,157);$dialog.Font=[Drawing.Font]::new('Segoe UI',11)
  $label=[System.Windows.Forms.Label]::new();$label.Text='Resolution';$label.SetBounds(24,24,470,25);$dialog.Controls.Add($label)
  $resolution=[System.Windows.Forms.ComboBox]::new();$resolution.SetBounds(24,55,470,32);$resolution.DropDownStyle='DropDownList';$resolution.Items.AddRange([object[]]$choices);$resolution.SelectedItem=$saved.Resolution;$dialog.Controls.Add($resolution)
  $label2=[System.Windows.Forms.Label]::new();$label2.Text='Display mode';$label2.SetBounds(24,110,470,25);$dialog.Controls.Add($label2)
- $mode=[System.Windows.Forms.ComboBox]::new();$mode.SetBounds(24,141,470,32);$mode.DropDownStyle='DropDownList';$mode.Items.AddRange([object[]]@('Windowed','Fullscreen'));$mode.SelectedItem=$saved.Mode;$dialog.Controls.Add($mode)
- $hint=[System.Windows.Forms.Label]::new();$hint.Text='Choose your monitor''s native resolution. Changes apply the next time you launch the game.';$hint.SetBounds(24,191,470,48);$hint.ForeColor=[Drawing.Color]::Silver;$dialog.Controls.Add($hint)
- $ok=[System.Windows.Forms.Button]::new();$ok.Text='Save';$ok.SetBounds(344,250,150,34);$ok.BackColor=[Drawing.Color]::FromArgb(212,175,98);$ok.ForeColor=[Drawing.Color]::Black;$ok.FlatStyle='Flat';$ok.DialogResult='OK';$dialog.Controls.Add($ok)
- if($dialog.ShowDialog() -eq 'OK'){$saved.Resolution=[string]$resolution.SelectedItem;$saved.Mode=[string]$mode.SelectedItem;Save-Settings};$dialog.Dispose()
-})
-$ui.AccountButton.Add_Click({Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $root 'CreateAccount.ps1')) -WindowStyle Hidden})
+ $mode=[System.Windows.Forms.ComboBox]::new();$mode.SetBounds(24,141,510,32);$mode.DropDownStyle='DropDownList';$mode.Items.AddRange([object[]]@('Windowed','Fullscreen','Borderless'));$mode.SelectedItem=$saved.Mode;$dialog.Controls.Add($mode)
+ Initialize-DisplayApi
+ $screens=@([Windows.Forms.Screen]::AllScreens);$monitor=[Windows.Forms.ComboBox]::new();$monitor.SetBounds(24,222,510,32);$monitor.DropDownStyle='DropDownList';$monitor.SelectedIndex=-1
+ $screenLabel=[Windows.Forms.Label]::new();$screenLabel.Text='Monitor (detected resolution)';$screenLabel.SetBounds(24,191,510,25);$dialog.Controls.Add($screenLabel)
+ for($i=0;$i -lt $screens.Count;$i++){$native=[MHDisplay]::Current($screens[$i].DeviceName);$null=$monitor.Items.Add(('Monitor {0}: {1} x {2}{3}' -f ($i+1),$native.width,$native.height,$(if($screens[$i].Primary){' (primary)'}else{''})));if($screens[$i].DeviceName -eq $saved.Monitor -or (-not $saved.Monitor -and $screens[$i].Primary)){$monitor.SelectedIndex=$i}}
+ if($monitor.SelectedIndex -lt 0){$monitor.SelectedIndex=0};$dialog.Controls.Add($monitor)
+ $hint=[System.Windows.Forms.Label]::new();$hint.Text='Automatic uses the selected monitor''s resolution. Borderless fills that monitor at its native resolution. Choices are saved for this Windows user.';$hint.SetBounds(24,270,510,64);$hint.ForeColor=[Drawing.Color]::Silver;$dialog.Controls.Add($hint)
+ $protect=[Windows.Forms.Button]::new();$protect.Text='Protect additional client fixes...';$protect.SetBounds(24,350,310,34);$dialog.Controls.Add($protect)
+ $protect.Add_Click({
+  $picker=[Windows.Forms.OpenFileDialog]::new();$picker.InitialDirectory=$saved.ClientPath;$picker.Multiselect=$true;$picker.Title='Choose client fixes to preserve during updates'
+  try{if($picker.ShowDialog() -eq 'OK'){
+   $list=Join-Path $saved.ClientPath '.mh-protected-files.json';$paths=@();if(Test-Path $list){$paths=@((Read-SharedText $list|ConvertFrom-Json).paths)}
+   foreach($file in $picker.FileNames){$relative=[IO.Path]::GetRelativePath($saved.ClientPath,$file).Replace('\','/');$null=Get-SafePath $saved.ClientPath $relative;$paths+=,$relative}
+   Write-JsonAtomic @{paths=@($paths|Select-Object -Unique)} $list;$hint.Text='Selected fixes are protected. Existing game executable and display configuration are protected automatically.'
+  }}catch{[void][Windows.Forms.MessageBox]::Show('Choose files inside your game folder. '+$_.Exception.Message,'Protect client fixes')}finally{$picker.Dispose()}
+ })
+ $shortcut=[Windows.Forms.Button]::new();$shortcut.Text='Create desktop shortcut';$shortcut.SetBounds(24,400,310,34);$dialog.Controls.Add($shortcut)
+ $shortcut.Add_Click({try{New-LauncherShortcut;$hint.Text='Desktop shortcut created for this Windows user.'}catch{$hint.Text='Could not create the shortcut. '+$_.Exception.Message}})
+ $ok=[System.Windows.Forms.Button]::new();$ok.Text='Save';$ok.SetBounds(384,458,150,34);$ok.BackColor=[Drawing.Color]::FromArgb(212,175,98);$ok.ForeColor=[Drawing.Color]::Black;$ok.FlatStyle='Flat';$ok.DialogResult='OK';$dialog.Controls.Add($ok)
+ if($ValidateOnly){if($PreviewSettings -and $PreviewPath){Export-FormPreview $dialog $PreviewPath};$dialog.Dispose();return}
+ if($dialog.ShowDialog() -eq 'OK'){$saved.Resolution=[string]$resolution.SelectedItem;$saved.Mode=[string]$mode.SelectedItem;$saved.Monitor=$screens[$monitor.SelectedIndex].DeviceName;Save-Settings};$dialog.Dispose()
+}
+$ui.SettingsButton.Add_Click({Show-GameSettings})
+$ui.AccountButton.Add_Click({Open-AccountForm})
+$ui.ConnectionButton.Add_Click({Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}" -ConnectionHelp' -f (Join-Path $root 'CreateAccount.ps1')) -WindowStyle Hidden})
 $workerTimer=[Windows.Threading.DispatcherTimer]::new();$workerTimer.Interval=[TimeSpan]::FromMilliseconds(200)
 function Start-Worker([string]$Action){
  if($Action -eq 'Launch' -and (-not $script:verified -or $script:available -or $script:recoveryRequired)){Sync-UpdateState;return}
- if($Action -eq 'Check'){$script:verified=$false;Sync-UpdateState}
+ if($Action -eq 'Check'){$script:verified=$false;Sync-UpdateState;Start-ConnectionCheck}
  if($script:worker -and -not $script:worker.HasExited){return}
  if($Action -ne 'Check' -and (Get-Process MarvelHeroesOmega -ErrorAction SilentlyContinue)){$ui.StatusText.Text='The game is already running. Close it before updating.';return}
  Save-Settings;New-Item -ItemType Directory (Join-Path $root '.updates') -Force|Out-Null
@@ -109,10 +164,12 @@ $workerTimer.Add_Tick({
  Sync-UpdateState
 })
 $window.Add_Closing({param($sender,$eventArgs) if($script:worker -and -not $script:worker.HasExited -and $script:workerAction -in @('Update','InstallGame')){$eventArgs.Cancel=$true;$ui.StatusText.Text='Please wait while the installation finishes.'}})
-$window.Add_Closed({$workerTimer.Stop();$artTimer.Stop()})
+$window.Add_Closed({$workerTimer.Stop();$artTimer.Stop();$connectionTimer.Stop()})
 Refresh-Game
 if($ValidateOnly){
- if($ui.Count -ne 17 -or $script:images.Count -ne 2){throw 'Launcher UI is incomplete.'}
+ Show-FirstTimeSetup
+ Show-GameSettings
+ if($ui.Count -ne 18 -or $script:images.Count -ne 2){throw 'Launcher UI is incomplete.'}
  # Exercise the actual button gate, including failed checks and retries.
  foreach($case in @(
   @{verified=$false;available=$false;busy=$false;recovery=$false;enabled=$false},
@@ -128,15 +185,10 @@ if($ValidateOnly){
  $script:busy=$false;$script:recoveryRequired=$false;$script:verified=-not $PreviewUpdate;$script:available=[bool]$PreviewUpdate
  if($PreviewUpdate){$ui.UpdateSummary.Text='A new launcher update is ready to install.';$ui.PlayButton.Content='PLAY'}
  Sync-UpdateState
- if($PreviewPath){$window.WindowStartupLocation='Manual';$window.Left=-32000;$window.Top=-32000;$window.ShowInTaskbar=$false;$window.Show();$window.UpdateLayout();$render=[Windows.Media.Imaging.RenderTargetBitmap]::new([int]$window.ActualWidth,[int]$window.ActualHeight,96,96,[Windows.Media.PixelFormats]::Pbgra32);$render.Render($window);$encoder=[Windows.Media.Imaging.PngBitmapEncoder]::new();$encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($render));$stream=[IO.File]::Create($PreviewPath);$encoder.Save($stream);$stream.Dispose();$window.Close()}
+ if($PreviewPath -and -not $PreviewSetup -and -not $PreviewSettings){$window.WindowStartupLocation='Manual';$window.Left=-32000;$window.Top=-32000;$window.ShowInTaskbar=$false;$window.Show();$window.UpdateLayout();$render=[Windows.Media.Imaging.RenderTargetBitmap]::new([int]$window.ActualWidth,[int]$window.ActualHeight,96,96,[Windows.Media.PixelFormats]::Pbgra32);$render.Render($window);$encoder=[Windows.Media.Imaging.PngBitmapEncoder]::new();$encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($render));$stream=[IO.File]::Create($PreviewPath);$encoder.Save($stream);$stream.Dispose();$window.Close()}
  Write-Output "Validated launcher, $($choices.Count) display presets, folder selection and two artwork slides.";exit 0
 }
 Save-Settings
-$window.Add_ContentRendered({$artTimer.Start();try{Start-Worker 'Check'}catch{$ui.StatusText.Text='Unable to check updates. Retry to unlock Play.';Set-Busy $false}})
+$window.Add_ContentRendered({$artTimer.Start();if(-not $saved.SetupComplete){Show-FirstTimeSetup};try{Start-ConnectionCheck;Start-Worker 'Check'}catch{$ui.StatusText.Text='Unable to check updates. Retry to unlock Play.';Set-Busy $false}})
 try{[void]$window.ShowDialog()}finally{if($launcherLock){$launcherLock.Dispose()}}
 if($script:restart){Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $root 'Play.ps1')) -WindowStyle Hidden}
-
-
-
-
-

@@ -36,8 +36,8 @@ if($HostUI){
 $lock=$null;$gameLock=$null;$recoveryComplete=$false
 try {
  $lock=[IO.File]::Open((Join-Path $updates 'update.lock'),'OpenOrCreate','ReadWrite','None')
- $settings=Get-Content (Join-Path $root 'LauncherSettings.json') -Raw|ConvertFrom-Json
- $gamePath=if($settings.PSObject.Properties['ClientPath'] -and $settings.ClientPath){[IO.Path]::GetFullPath($settings.ClientPath)}else{Join-Path $root 'Client'}
+ $settings=Get-PlayerSettings $root
+ $gamePath=[IO.Path]::GetFullPath($settings.ClientPath)
  if($gamePath.TrimEnd('\') -eq [IO.Path]::GetPathRoot($gamePath).TrimEnd('\') -or $gamePath.TrimEnd('\') -eq $root.TrimEnd('\')){throw 'Choose a dedicated game folder.'}
  $gameStatePath=Join-Path $gamePath '.mh-client-version.json'
  $gameState=if(Test-Path -LiteralPath $gameStatePath){Get-Content -LiteralPath $gameStatePath -Raw|ConvertFrom-Json}else{[pscustomobject]@{version='1.52.0.1700'}}
@@ -88,12 +88,12 @@ try {
   if($isGame -and -not $gameLock){$gameLock=[IO.File]::Open((Join-Path $cache 'update.lock'),'OpenOrCreate','ReadWrite','None')}
   $transaction=Join-Path $cache ('transaction-'+[guid]::NewGuid().ToString('N'));[IO.Directory]::CreateDirectory($transaction)|Out-Null
   $stage=Join-Path $transaction 'stage';[IO.Directory]::CreateDirectory($stage)|Out-Null
-  $allFiles=@();$paths=@{};$totalSize=0L
+  $allFiles=@();$paths=@{};$totalSize=0L;$preserved=@()
   if(@($package.files).Count -eq 0){throw 'Empty update package.'}
   foreach($file in $package.files){
    if(-not $isGame -and $file.path -notin $launcherFiles){throw 'Launcher package contains a protected file.'}
    if($isGame -and ($file.path -notlike 'Client/*' -or $file.path -match '(?i)(^|/)(Saved|SaveGames|Logs|Screenshots|\.mh[^/]*)(/|$)|\.(log|db)$')){throw 'Client update contains a protected file.'}
-   if($package.component -eq 'client' -and $file.path -match '(?i)(^|/)Config(/|$)|\.ini$'){throw 'Patches cannot replace player configuration.'}
+   if($isGame -and (Test-ProtectedClientFile $gamePath $file.path.Substring(7))){$preserved+=,$file.path.Substring(7)}
    $null=Get-SafePath $root $file.path
    if($paths.ContainsKey($file.path)){throw 'Duplicate package path.'};$paths[$file.path]=$true
    if([long]$file.size -lt 0){throw 'Invalid file size.'};$totalSize+=[long]$file.size
@@ -120,13 +120,14 @@ try {
   Set-TransferStatus 'Verifying and unpacking files'
   Expand-VerifiedPackage $archive $stage $package.files
   foreach($file in $package.files){
-   if($isGame){$copy=[pscustomobject]@{path=$file.path.Substring(7);size=$file.size;sha256=$file.sha256;protectLocal=$true;baseSha256=if($file.PSObject.Properties['baseSha256']){$file.baseSha256}else{''}};$allFiles+=,$copy}else{$allFiles+=,$file}
+   if($isGame){if($file.path.Substring(7) -in $preserved){continue};$copy=[pscustomobject]@{path=$file.path.Substring(7);size=$file.size;sha256=$file.sha256;protectLocal=$true;baseSha256=if($file.PSObject.Properties['baseSha256']){$file.baseSha256}else{''}};$allFiles+=,$copy}else{$allFiles+=,$file}
   }
-  if($isGame){$stage=Join-Path $stage 'Client';$gameState.version=[string]$package.version;$versionFile='.mh-client-version.json';Write-JsonAtomic $gameState (Join-Path $stage $versionFile)}
+  if($isGame){$stage=Join-Path $stage 'Client';$gameState.version=[string]$package.version;$gameState|Add-Member -NotePropertyName preservedCustomizations -NotePropertyValue $preserved -Force;$versionFile='.mh-client-version.json';Write-JsonAtomic $gameState (Join-Path $stage $versionFile)}
   else{$state.launcher=[string]$package.version;$versionFile='InstalledVersions.json';Write-JsonAtomic $state (Join-Path $stage $versionFile);$launcherChanged=$true}
   $allFiles+=,[pscustomobject]@{path=$versionFile;size=(Get-Item (Join-Path $stage $versionFile)).Length;sha256=(Get-FileHash (Join-Path $stage $versionFile)).Hash}
   Set-TransferStatus 'Installing verified files'
   Install-Transaction $destinationRoot $stage $transaction $allFiles
+  if($preserved.Count){Write-JsonAtomic @{files=$preserved;version=[string]$package.version;message='Existing display configuration and protected client fixes were preserved.'} (Join-Path $cache 'preserved-customizations.json')}
   try {
   # Only remove generated staging inside this exact transaction after commit.
   $stagingRoot=Get-SafePath $transaction 'stage'

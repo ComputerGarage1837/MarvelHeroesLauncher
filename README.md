@@ -57,3 +57,12 @@ The currently published baseline assumes the compatible 1.52.0.1700 Win64 client
 ## Artwork
 
 Unofficial fan project. Avengers: Endgame and Avengers: Infinity War artwork is © Marvel Studios, from the official [Endgame](https://movies.disney.com/avengers-endgame) and [Infinity War](https://movies.disney.com/avengers-infinity-war) film pages. Asset source URLs are recorded in `launcher/Assets/CREDITS.txt`.
+# Player settings and client customizations
+
+The launcher imports legacy `LauncherSettings.json` once into the current Windows user's Local AppData, keyed by launcher folder. Launcher packages never include this per-user file. The updater resolves the game folder from the same profile. Monitor detection uses the active Windows display mode; borderless mode launches windowed and removes the frame after the game window appears. Borderless uses the selected monitor's native pixel bounds.
+
+The welcome guide selects a game folder, optionally creates a desktop shortcut for the current user, and opens account creation. The existing full-client publication requirement still applies: locating an existing client works now; downloading a full client requires a published client package.
+
+Connection checks fetch the public configuration without following redirects, verify the login route's expected GET response, and connect to game TCP port 4306. GET returning 405 on the login route confirms that route exists; it is not treated as a player's authentication result. Login help explains the game's error codes without collecting passwords. Protocol status meanings are from [MHServerEmu AuthStatusCodes](https://github.com/Crypto137/MHServerEmu/blob/master/src/MHServerEmu.PlayerManagement/Auth/AuthStatusCodes.cs).
+
+Existing client configuration and `MarvelHeroesOmega.exe` are retained during client updates. Players can mark additional fixes through Game settings, stored as exact game-relative paths in `.mh-protected-files.json`. Protected files are omitted from the installation transaction, while verified unprotected content updates normally. Missing files can still be installed. Applied client state records `preservedCustomizations`, and the latest preservation report is written to `.mh-updates/preserved-customizations.json`. For other modified files, hash conflicts stop installation before replacements begin. Intentionally preserved executable fixes may need a compatible replacement from the host when a future client version changes.

@@ -10,7 +10,7 @@
   <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style>
  </Window.Resources>
  <Grid>
-  <Grid.RowDefinitions><RowDefinition Height="76"/><RowDefinition Height="*"/><RowDefinition Height="178"/><RowDefinition Height="134"/><RowDefinition Height="30"/></Grid.RowDefinitions>
+  <Grid.RowDefinitions><RowDefinition Height="76"/><RowDefinition Height="*"/><RowDefinition Height="178"/><RowDefinition Height="134"/><RowDefinition Height="42"/></Grid.RowDefinitions>
   <Border Grid.Row="0" BorderBrush="#332D20" BorderThickness="0,0,0,1">
    <Grid Margin="30,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
     <StackPanel VerticalAlignment="Center"><TextBlock Text="MARVEL HEROES" Foreground="#D4AF62" FontSize="23" FontWeight="Bold"/><TextBlock Text="O M E G A   /   C O M M U N I T Y   L A U N C H E R" FontSize="9" Foreground="#8D8678" Margin="1,4,0,0"/></StackPanel>
@@ -54,7 +54,7 @@
     <Button x:Name="PlayButton" Grid.Column="2" Content="PLAY" FontSize="23" Foreground="#15130D" BorderBrush="#F5DFAB" Padding="16,16" VerticalAlignment="Center"><Button.Background><LinearGradientBrush StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#F4DEAE" Offset="0"/><GradientStop Color="#D6B467" Offset="0.48"/><GradientStop Color="#B58A3E" Offset="1"/></LinearGradientBrush></Button.Background><Button.Effect><DropShadowEffect Color="#D4AF62" BlurRadius="22" ShadowDepth="0" Opacity="0.22"/></Button.Effect></Button>
    </Grid>
   </Border>
-  <Grid Grid.Row="4" Margin="32,0"><TextBlock x:Name="VersionLabel" Text="LAUNCHER 1.1.0" FontSize="9" Foreground="#706D64" VerticalAlignment="Center"/><TextBlock Text="Unofficial fan launcher  •  Artwork © Marvel Studios" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="9" Foreground="#706D64"/></Grid>
+  <Grid Grid.Row="4" Margin="32,0"><TextBlock x:Name="VersionLabel" Text="LAUNCHER 1.1.0" FontSize="9" Foreground="#706D64" VerticalAlignment="Center"/><Button x:Name="ConnectionButton" Content="Server status / Login help" FontSize="11" Padding="12,6" HorizontalAlignment="Center" VerticalAlignment="Center"/><TextBlock Text="Unofficial fan launcher  •  Artwork © Marvel Studios" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="9" Foreground="#706D64"/></Grid>
  </Grid>
 </Window>
 

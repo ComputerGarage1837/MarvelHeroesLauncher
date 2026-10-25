@@ -1,9 +1,38 @@
-param([switch]$ValidateOnly, [string]$PreviewPath)
+param([switch]$ValidateOnly, [string]$PreviewPath,[switch]$ConnectionHelp)
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Net.Http
 [System.Windows.Forms.Application]::EnableVisualStyles()
+. (Join-Path $PSScriptRoot 'UpdateCore.ps1')
+Set-StrictMode -Off
+if($ConnectionHelp){
+ $help=[Windows.Forms.Form]::new();$help.Text='Server connection and login help';$help.ClientSize=[Drawing.Size]::new(650,570);$help.StartPosition='CenterScreen';$help.FormBorderStyle='FixedDialog';$help.MaximizeBox=$false;$help.BackColor=[Drawing.Color]::Black;$help.ForeColor=[Drawing.Color]::WhiteSmoke;$help.Font=[Drawing.Font]::new('Segoe UI',11)
+ $heading=[Windows.Forms.Label]::new();$heading.Text='CONNECTION AND LOGIN HELP';$heading.Font=[Drawing.Font]::new('Segoe UI',19,[Drawing.FontStyle]::Bold);$heading.ForeColor=[Drawing.Color]::FromArgb(212,175,98);$heading.SetBounds(24,20,600,38);$help.Controls.Add($heading)
+ $health=[Windows.Forms.TextBox]::new();$health.Multiline=$true;$health.ReadOnly=$true;$health.ScrollBars='Vertical';$health.BackColor=[Drawing.Color]::Black;$health.ForeColor=[Drawing.Color]::WhiteSmoke;$health.Text='Checking configuration, login service, and game connection...';$health.SetBounds(24,80,600,172);$help.Controls.Add($health)
+ $hint=[Windows.Forms.Label]::new();$hint.Text='Choose the login message or code shown inside the game:';$hint.SetBounds(24,267,600,28);$help.Controls.Add($hint)
+ $reason=[Windows.Forms.ComboBox]::new();$reason.DropDownStyle='DropDownList';$reason.SetBounds(24,302,600,32);$help.Controls.Add($reason)
+ $reasons=@(@{text='General login / connection failure';code=0},@{text='Incorrect email or password (401 / 403)';code=401},@{text='Account banned (402)';code=402},@{text='Email not verified (405)';code=405},@{text='Terms need accepting (407)';code=407},@{text='Client update required (409)';code=409},@{text='Account archived (411)';code=411},@{text='Password expired (412)';code=412},@{text='Age restriction (417)';code=417},@{text='Login service error (500)';code=500},@{text='Temporarily unavailable (503)';code=503},@{text='Login accepted, but cannot enter game (200)';code=200})
+ foreach($item in $reasons){$null=$reason.Items.Add($item.text)}
+ $explanation=[Windows.Forms.Label]::new();$explanation.SetBounds(24,350,600,90);$explanation.ForeColor=[Drawing.Color]::Silver;$help.Controls.Add($explanation)
+ $reason.Add_SelectedIndexChanged({$explanation.Text=Get-LoginFailureMessage $reasons[$reason.SelectedIndex].code});$reason.SelectedIndex=0
+ $retry=[Windows.Forms.Button]::new();$retry.Text='Check again';$retry.SetBounds(24,490,180,36);$help.Controls.Add($retry)
+ $register=[Windows.Forms.Button]::new();$register.Text='Create account';$register.SetBounds(220,490,180,36);$help.Controls.Add($register)
+ $register.Add_Click({Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}"' -f $PSCommandPath) -WindowStyle Hidden})
+ $probeState=@{shell=$null;pending=$null};$probeTimer=[Windows.Forms.Timer]::new();$probeTimer.Interval=200
+ function Start-Probe {
+  $retry.Enabled=$false;$health.Text='Checking configuration, login service, and game connection...'
+  $probeState.shell=[powershell]::Create();$null=$probeState.shell.AddScript('param($core) . $core; Test-MarvelConnection').AddArgument((Join-Path $PSScriptRoot 'UpdateCore.ps1'));$probeState.pending=$probeState.shell.BeginInvoke();$probeTimer.Start()
+ }
+ $retry.Add_Click({Start-Probe})
+ $probeTimer.Add_Tick({
+  if(-not $probeState.pending.IsCompleted){return};$probeTimer.Stop()
+  try{$report=@($probeState.shell.EndInvoke($probeState.pending))[0];if(-not $report){throw 'Empty connection report'};$summary=if($report.Reachable){'Server reachable. Credentials are checked when you sign in inside the game.'}else{'A connection needs attention:'};$health.Text=$summary+"`r`n`r`n"+(($report.Checks|ForEach-Object {"$($_.Name): $($_.Message)"}) -join "`r`n")+"`r`nChecked at "+$report.CheckedAt}catch{$health.Text='The connection check could not finish. Check your internet connection, then try again.'}finally{$probeState.shell.Dispose();$probeState.shell=$null;$retry.Enabled=$true}
+ })
+ $help.Add_FormClosed({$probeTimer.Stop();if($probeState.shell){$probeState.shell.Stop();$probeState.shell.Dispose()}})
+ if($ValidateOnly){if($PreviewPath){Export-FormPreview $help $PreviewPath};Write-Output 'Connection help validated.'}else{$help.Add_Shown({Start-Probe});[void]$help.ShowDialog()}
+ $probeTimer.Dispose();$help.Dispose();exit 0
+}
 $endpoint='https://myfamilyflix.duckdns.org/marvel/accounts/create'
 $form=[System.Windows.Forms.Form]::new()
 $form.Text='Marvel Heroes - Create Account'
@@ -16,7 +45,7 @@ function Add-Label($text,$y,$height=25){
 }
 $title=Add-Label 'CREATE YOUR ACCOUNT' 22 34
 $title.Font=[System.Drawing.Font]::new('Segoe UI',18,[System.Drawing.FontStyle]::Bold)
-$null=Add-Label 'Server: myfamilyflix.duckdns.org' 64
+$null=Add-Label 'Use this email and password to sign in inside the game.' 64
 function Add-Field($label,$y,$secret=$false){
  $null=Add-Label $label $y
  $box=[System.Windows.Forms.TextBox]::new(); $box.SetBounds(28,($y+26),444,29)
@@ -64,7 +93,7 @@ $timer.Add_Tick({
  try {
   if(-not $state.Response){
    $state.Response=$state.Task.GetAwaiter().GetResult()
-   if(-not $state.Response.IsSuccessStatusCode){throw 'Server request failed'}
+   if(-not $state.Response.IsSuccessStatusCode){$statusCode=[int]$state.Response.StatusCode;throw "Registration service returned $statusCode"}
    $state.ReadTask=$state.Response.Content.ReadAsStringAsync()
   }
   if(-not $state.ReadTask.IsCompleted){return}
@@ -77,7 +106,11 @@ $timer.Add_Tick({
    $submit.Text='Done'
   } elseif($messages.ContainsKey($code)){$status.Text=$messages[$code]}
   else{$status.Text='The server could not create your account. Please try again.'}
- } catch { $status.Text='Could not confirm account creation. Retry; if the email is already registered, try signing in.' }
+ } catch {
+  if($state.Response -and [int]$state.Response.StatusCode -ge 500){$status.Text='The account service is unavailable. Wait a moment, then retry.'}
+  elseif($state.Response -and -not $state.Response.IsSuccessStatusCode){$status.Text='The account service rejected the request. Open Login help and check the connection; contact the server owner if it continues.'}
+  else{$status.Text='Could not confirm account creation. Open Login help to check the connection. If the email is already registered, sign in instead.'}
+ }
  $timer.Stop()
  foreach($control in @($email,$player,$password,$confirm)){$control.Enabled=-not $state.Created}
  $submit.Enabled=$true
