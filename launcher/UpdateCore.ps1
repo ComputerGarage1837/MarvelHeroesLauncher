@@ -128,7 +128,7 @@ function Get-LoginFailureMessage([int]$Code){
 }
 function Get-ServerProfile([string]$Name='Live'){
  # Accept a legacy profile argument while always resolving the remaining Live service.
- return [pscustomobject]@{Key='Live';Name='Live Server';SiteConfig='http://myfamilyflix.duckdns.org/SiteConfig.xml';Auth='https://myfamilyflix.duckdns.org/AuthServer/Login/IndexPB';Registration='https://myfamilyflix.duckdns.org/marvel/accounts/create';GameHost='myfamilyflix.duckdns.org';GamePort=4306;Notice='Your regular accounts and characters.'}
+ return [pscustomobject]@{Key='Live';Name='Live Server';SiteConfig='http://myfamilyflix.duckdns.org/SiteConfig.xml';Auth='https://myfamilyflix.duckdns.org/AuthServer/Login/IndexPB';Registration='https://myfamilyflix.duckdns.org/marvel/accounts/create';GameHost='myfamilyflix.duckdns.org';GamePort=4306;Notice=''}
 }
 function Get-GameLaunchArguments($Settings,$Display){
  $profile=Get-ServerProfile $Settings.Server

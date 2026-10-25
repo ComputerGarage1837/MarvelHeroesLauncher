@@ -42,7 +42,7 @@ if(-not $ValidateOnly){
 }
 [xml]$xaml=Get-Content (Join-Path $root 'Launcher.xaml') -Raw
 $reader=[Xml.XmlNodeReader]::new($xaml);$window=[Windows.Markup.XamlReader]::Load($reader)
-$ui=@{};foreach($name in @('SettingsButton','AccountButton','HeroImage','UpdateSummary','UpdateButton','GameLocation','FolderButton','LocateButton','StatusText','PercentText','Progress','DetailText','PlayButton','VersionLabel','UpdateNotice','UpdateHeading','UpdateCard','ConnectionButton','ServerNotice')){$ui[$name]=$window.FindName($name)}
+$ui=@{};foreach($name in @('SettingsButton','AccountButton','HeroImage','UpdateSummary','UpdateButton','GameLocation','FolderButton','LocateButton','StatusText','PercentText','Progress','DetailText','PlayButton','VersionLabel','UpdateNotice','UpdateHeading','UpdateCard','ConnectionButton')){$ui[$name]=$window.FindName($name)}
 $version=(Get-Content (Join-Path $root 'InstalledVersions.json') -Raw|ConvertFrom-Json).launcher;$ui.VersionLabel.Text='LAUNCHER '+$version
 $script:images=@();foreach($name in @('avengers-endgame.jpg','avengers-infinity-war.jpg')){$bitmap=[Windows.Media.Imaging.BitmapImage]::new();$bitmap.BeginInit();$bitmap.CacheOption='OnLoad';$bitmap.UriSource=[Uri]::new((Join-Path $root "Assets/$name"));$bitmap.EndInit();$bitmap.Freeze();$script:images+=,$bitmap}
 $ui.HeroImage.Source=$script:images[0];$script:filmIndex=0
@@ -52,7 +52,6 @@ $workerLog=Join-Path $root '.updates/result.txt';$workerError=Join-Path $root '.
 $connectionState=@{process=$null;server=''};$connectionTimer=[Windows.Threading.DispatcherTimer]::new();$connectionTimer.Interval=[TimeSpan]::FromMilliseconds(300)
 function Sync-ServerChoice {
  $profile=Get-ServerProfile $saved.Server
- $ui.ServerNotice.Text=$profile.Notice
  $window.Title='Marvel Heroes Omega — '+$profile.Name
  if($script:installed){$ui.PlayButton.Content='PLAY'}
 }
@@ -186,7 +185,7 @@ Refresh-Game
 if($ValidateOnly){
  Show-FirstTimeSetup
  Show-GameSettings
- if($ui.Count -ne 19 -or $script:images.Count -ne 2){throw 'Launcher UI is incomplete.'}
+ if($ui.Count -ne 18 -or $script:images.Count -ne 2){throw 'Launcher UI is incomplete.'}
  # Exercise the actual button gate, including failed checks and retries.
  foreach($case in @(
   @{verified=$false;available=$false;busy=$false;recovery=$false;enabled=$false},
