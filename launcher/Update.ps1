@@ -3,7 +3,7 @@ $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'UpdateCore.ps1')
 . (Join-Path $PSScriptRoot 'Transfer.ps1')
 $root=$PSScriptRoot;$updates=Get-SafePath $root '.updates';[IO.Directory]::CreateDirectory($updates)|Out-Null
-$lock=$null;$gameLock=$null
+$lock=$null;$gameLock=$null;$recoveryComplete=$false
 try {
  $lock=[IO.File]::Open((Join-Path $updates 'update.lock'),'OpenOrCreate','ReadWrite','None')
  $settings=Get-Content (Join-Path $root 'LauncherSettings.json') -Raw|ConvertFrom-Json
@@ -20,6 +20,7 @@ try {
   $gameLock=[IO.File]::Open((Join-Path $gameUpdates 'update.lock'),'OpenOrCreate','ReadWrite','None')
   foreach($directory in Get-ChildItem -LiteralPath $gameUpdates -Directory -Filter 'transaction-*'){Restore-Update $gamePath $directory.FullName}
  }
+ $recoveryComplete=$true
  $config=Get-Content (Join-Path $root 'UpdateConfig.json') -Raw|ConvertFrom-Json
  if($config.repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'){throw 'The update repository has not been configured.'}
  $repository=[string]$config.repository;$headers=@{'User-Agent'='MarvelHeroesLauncher';Accept='application/vnd.github+json'}
@@ -96,6 +97,7 @@ try {
   $allFiles+=,[pscustomobject]@{path=$versionFile;size=(Get-Item (Join-Path $stage $versionFile)).Length;sha256=(Get-FileHash (Join-Path $stage $versionFile)).Hash}
   Set-TransferStatus 'Installing verified files'
   Install-Transaction $destinationRoot $stage $transaction $allFiles
+  try {
   # Only remove generated staging inside this exact transaction after commit.
   $stagingRoot=Get-SafePath $transaction 'stage'
   if($stagingRoot.StartsWith([IO.Path]::GetFullPath($transaction).TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)){
@@ -103,11 +105,13 @@ try {
   }
   foreach($local in $localParts){Remove-Item -LiteralPath $local -Force}
   if($localParts.Count -gt 1){Remove-Item -LiteralPath $archive -Force}
+  } catch { Write-Output 'Update installed; some temporary files will remain in the cache.' }
  }
  Set-TransferStatus 'Installation complete' 100 100
  Write-Output 'Installation complete.'
  if($launcherChanged){exit 10}else{exit 0}
-} catch {Set-TransferStatus $_.Exception.Message;Write-Output $_.Exception.Message;exit 1} finally {if($gameLock){$gameLock.Dispose()};if($lock){$lock.Dispose()}}
+} catch {Set-TransferStatus $_.Exception.Message;Write-Output $_.Exception.Message;if(-not $recoveryComplete){exit 20}else{exit 1}} finally {if($gameLock){$gameLock.Dispose()};if($lock){$lock.Dispose()}}
+
 
 
 

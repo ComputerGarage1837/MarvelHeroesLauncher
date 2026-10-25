@@ -74,6 +74,7 @@ $workerTimer.Add_Tick({
  $code=$script:worker.ExitCode
  if($script:workerAction -eq 'Launch' -and $code -eq 0){$window.Close();return}
  if($code -eq 10){$script:restart=$true;$window.Close();return}
+ if($code -eq 20){$ui.PlayButton.IsEnabled=$false;$ui.StatusText.Text='Update recovery is required. Close the game and check for updates again.';return}
  if($code -ne 0){
   if($script:workerAction -eq 'Check'){$ui.StatusText.Text='Update service unavailable. Your installed game is still playable.';$ui.UpdateSummary.Text='Could not check for updates. Try again later.'}
   else{$message=Get-Content $workerLog -Tail 1;if(-not $message){$message='Operation stopped. See .updates/error.txt for details.'};$ui.StatusText.Text=$message}
@@ -94,4 +95,5 @@ Save-Settings
 $window.Add_ContentRendered({$artTimer.Start();try{Start-Worker 'Check'}catch{$ui.StatusText.Text='Unable to check updates. You can still play.';Set-Busy $false}})
 try{[void]$window.ShowDialog()}finally{if($launcherLock){$launcherLock.Dispose()}}
 if($script:restart){Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $root 'Play.ps1')) -WindowStyle Hidden}
+
 
