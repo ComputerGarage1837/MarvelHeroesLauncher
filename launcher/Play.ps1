@@ -1,4 +1,4 @@
-param([switch]$ValidateOnly,[string]$PreviewPath,[switch]$PreviewUpdate,[switch]$PreviewSetup,[switch]$PreviewSettings)
+param([switch]$ValidateOnly,[string]$PreviewPath,[switch]$PreviewUpdate,[switch]$PreviewSetup,[switch]$PreviewSettings,[switch]$Recover)
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase,System.Windows.Forms,System.Drawing
 . (Join-Path $PSScriptRoot 'UpdateCore.ps1')
@@ -32,7 +32,14 @@ function Show-FirstTimeSetup {
  [void]$setup.ShowDialog();$setup.Dispose();Refresh-Game
 }
 $launcherLock=$null
-if(-not $ValidateOnly){try{$launcherLock=[IO.File]::Open((Join-Path $root '.launcher.lock'),'OpenOrCreate','ReadWrite','None')}catch{[void][System.Windows.MessageBox]::Show('This launcher is already open.','Marvel Heroes');exit 0}}
+if(-not $ValidateOnly){
+ try{
+  $existing=@(Get-CimInstance Win32_Process -Filter "Name = 'pwsh.exe' OR Name = 'powershell.exe'" -ErrorAction SilentlyContinue|Where-Object {$_.ProcessId -ne $PID -and $_.CommandLine -match '(?i)(?:^|\s)-File\s+(?:"([^"]+)"|(\S+))' -and [IO.Path]::GetFullPath($(if($Matches[1]){$Matches[1]}else{$Matches[2]})) -eq $PSCommandPath})
+  foreach($entry in $existing){$other=Get-Process -Id $entry.ProcessId -ErrorAction SilentlyContinue;if(-not $other){continue};if($other.MainWindowHandle -ne [IntPtr]::Zero){Initialize-DisplayApi;[MHDisplay]::Activate($other.MainWindowHandle);exit 0};if($Recover){Stop-Process -Id $other.Id -Force -ErrorAction Stop}}
+  $launcherLock=Enter-LauncherInstance $root
+  if(-not $launcherLock.Acquired){$launcherLock.Mutex.Dispose();[void][System.Windows.MessageBox]::Show('The launcher is still starting in the background. If no window appears, run Repair-Launcher.bat from this launcher folder.','Marvel Heroes');exit 0}
+ }catch{[void][System.Windows.MessageBox]::Show(('The launcher could not start: '+$_.Exception.Message),'Marvel Heroes');exit 1}
+}
 [xml]$xaml=Get-Content (Join-Path $root 'Launcher.xaml') -Raw
 $reader=[Xml.XmlNodeReader]::new($xaml);$window=[Windows.Markup.XamlReader]::Load($reader)
 $ui=@{};foreach($name in @('SettingsButton','AccountButton','HeroImage','UpdateSummary','UpdateButton','GameLocation','FolderButton','LocateButton','StatusText','PercentText','Progress','DetailText','PlayButton','VersionLabel','UpdateNotice','UpdateHeading','UpdateCard','ConnectionButton')){$ui[$name]=$window.FindName($name)}
@@ -190,5 +197,5 @@ if($ValidateOnly){
 }
 Save-Settings
 $window.Add_ContentRendered({$artTimer.Start();if(-not $saved.SetupComplete){Show-FirstTimeSetup};try{Start-ConnectionCheck;Start-Worker 'Check'}catch{$ui.StatusText.Text='Unable to check updates. Retry to unlock Play.';Set-Busy $false}})
-try{[void]$window.ShowDialog()}finally{if($launcherLock){$launcherLock.Dispose()}}
+try{[void]$window.ShowDialog()}finally{if($launcherLock){if($launcherLock.Acquired){$launcherLock.Mutex.ReleaseMutex()};$launcherLock.Mutex.Dispose()}}
 if($script:restart){Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $root 'Play.ps1')) -WindowStyle Hidden}

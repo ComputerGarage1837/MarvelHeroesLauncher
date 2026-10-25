@@ -2,10 +2,22 @@ $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../launcher/UpdateCore.ps1')
 function Check($Condition,[string]$Message){if(-not $Condition){throw $Message};Write-Output "PASS: $Message"}
 $testRoot=Join-Path $PSScriptRoot ('sandbox-'+[guid]::NewGuid().ToString('N'));[IO.Directory]::CreateDirectory($testRoot)|Out-Null
+Check (-not (Get-PlayerSettings $testRoot).SetupComplete) 'A genuinely fresh installation gets the welcome guide'
+$updatedRoot=Join-Path $testRoot 'updated';[IO.Directory]::CreateDirectory((Join-Path $updatedRoot '.updates'))|Out-Null
+Check ((Get-PlayerSettings $updatedRoot).SetupComplete) 'An updated installation skips the welcome guide even before profile migration'
+$stale=Join-Path $testRoot '.launcher.lock';$staleHandle=[IO.File]::Open($stale,'OpenOrCreate','ReadWrite','None')
+$instance=$null
+try{
+ $instance=Enter-LauncherInstance $testRoot
+ Check $instance.Acquired 'An old or inaccessible lock file cannot falsely report the launcher as open'
+ $second=[powershell]::Create();$null=$second.AddScript('param($core,$root) . $core; $instance=Enter-LauncherInstance $root; try { $instance.Acquired } finally { if($instance.Acquired){$instance.Mutex.ReleaseMutex()};$instance.Mutex.Dispose() }').AddArgument((Join-Path $PSScriptRoot '../launcher/UpdateCore.ps1')).AddArgument($testRoot)
+ try{$result=$second.Invoke();Check (-not [bool]$result[0]) 'An active launcher still excludes a second instance'}finally{$second.Dispose()}
+}finally{if($instance -and $instance.Acquired){$instance.Mutex.ReleaseMutex();$instance.Mutex.Dispose()};$staleHandle.Dispose()}
 $legacy=Join-Path $testRoot 'LauncherSettings.json'
 Write-JsonAtomic @{Resolution='3440 x 1440  |  Ultrawide 21:9';Mode='Fullscreen';ClientPath=(Join-Path $testRoot 'Game')} $legacy
 $settings=Get-PlayerSettings $testRoot
 Check ($settings.Mode -eq 'Fullscreen' -and $settings.Resolution -like '3440*') 'Existing display choices migrate without changing them'
+Check $settings.SetupComplete 'Existing player settings suppress first-run pages'
 $settings.Mode='Borderless';$settings.SetupComplete=$true;Save-PlayerSettings $testRoot $settings
 try {
  Write-JsonAtomic @{Resolution='1280 x 720';Mode='Windowed'} $legacy

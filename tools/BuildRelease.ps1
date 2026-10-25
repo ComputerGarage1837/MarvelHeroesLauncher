@@ -35,6 +35,10 @@ $packages+=@{component='launcher';version="$Version";asset=$asset;sha256=(Get-Fi
 @{schemaVersion=1;packages=$packages}|ConvertTo-Json -Depth 15|Set-Content (Join-Path $out 'update-manifest.json')
 @{repository=$Repository}|ConvertTo-Json|Set-Content (Join-Path $stage 'UpdateConfig.json')
 @{launcher="$Version";client='0.0.0'}|ConvertTo-Json|Set-Content (Join-Path $stage 'InstalledVersions.json')
+@'
+@echo off
+call "%~dp0Play.bat" -Recover
+'@|Set-Content (Join-Path $stage 'Repair-Launcher.bat')
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath (Join-Path $out 'MarvelHeroesLauncher-Install.zip') -Force
 Write-Output "Built launcher $Version and update-manifest.json in $out"
 

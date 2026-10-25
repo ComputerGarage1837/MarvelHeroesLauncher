@@ -38,11 +38,20 @@ function Get-PlayerSettingsPath([string]$LauncherRoot){
 function Get-PlayerSettings([string]$LauncherRoot){
  $settings=@{Resolution='Automatic (monitor resolution)';Mode='Windowed';Monitor='';ClientPath=(Join-Path $LauncherRoot 'Client');SetupComplete=$false}
  $path=Get-PlayerSettingsPath $LauncherRoot
+ $existingInstall=(Test-Path -LiteralPath $path) -or (Test-Path -LiteralPath (Join-Path $LauncherRoot 'LauncherSettings.json')) -or (Test-Path -LiteralPath (Join-Path $LauncherRoot '.updates')) -or (Test-Path -LiteralPath (Join-Path $LauncherRoot '.launcher.lock'))
  if(-not(Test-Path -LiteralPath $path)){$path=Join-Path $LauncherRoot 'LauncherSettings.json'}
  if(Test-Path -LiteralPath $path){
   try{$old=Read-SharedText $path|ConvertFrom-Json -AsHashtable;foreach($key in @('Resolution','Monitor','ClientPath','SetupComplete')){if($old.ContainsKey($key)){$settings[$key]=$old[$key]}};if($old.Mode -in @('Windowed','Fullscreen','Borderless')){$settings.Mode=$old.Mode}}catch{throw 'Your saved settings could not be read. Keep a copy of settings.json before repairing it.'}
  }
+ $settings.SetupComplete=[bool]$settings.SetupComplete -or $existingInstall
  return $settings
+}
+function Enter-LauncherInstance([string]$LauncherRoot){
+ $key=[IO.Path]::GetFileName([IO.Path]::GetDirectoryName((Get-PlayerSettingsPath $LauncherRoot)))
+ $mutex=[Threading.Mutex]::new($false,('Local\MarvelHeroesLauncher-'+$key+'-'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value))
+ $acquired=$false
+ try{$acquired=$mutex.WaitOne(0)}catch [Threading.AbandonedMutexException]{$acquired=$true}
+ return [pscustomobject]@{Mutex=$mutex;Acquired=$acquired}
 }
 function Save-PlayerSettings([string]$LauncherRoot,$Settings){
  $path=Get-PlayerSettingsPath $LauncherRoot
@@ -67,6 +76,8 @@ public static class MHDisplay {
  [DllImport("user32.dll",SetLastError=true)] static extern int SetWindowLong(IntPtr h,int index,int value);
  [DllImport("user32.dll",SetLastError=true)] static extern bool SetWindowPos(IntPtr h,IntPtr after,int x,int y,int w,int height,uint flags);
  [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h,int command);
+ [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+ public static void Activate(IntPtr h){ShowWindow(h,9);SetForegroundWindow(h);}
  [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
  public static Mode Current(string device){var m=new Mode();m.size=(short)Marshal.SizeOf<Mode>();if(!EnumDisplaySettings(device,-1,ref m))throw new InvalidOperationException("Cannot detect this monitor's resolution.");return m;}
  public static void Borderless(IntPtr h,int x,int y,int w,int height){
