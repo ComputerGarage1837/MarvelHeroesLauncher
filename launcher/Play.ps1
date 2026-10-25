@@ -10,11 +10,11 @@ $launcherLock=$null
 if(-not $ValidateOnly){try{$launcherLock=[IO.File]::Open((Join-Path $root '.launcher.lock'),'OpenOrCreate','ReadWrite','None')}catch{[void][System.Windows.MessageBox]::Show('This launcher is already open.','Marvel Heroes');exit 0}}
 [xml]$xaml=Get-Content (Join-Path $root 'Launcher.xaml') -Raw
 $reader=[Xml.XmlNodeReader]::new($xaml);$window=[Windows.Markup.XamlReader]::Load($reader)
-$ui=@{};foreach($name in @('SettingsButton','AccountButton','HeroImage','FilmLabel','UpdateSummary','UpdateButton','GameLocation','FolderButton','LocateButton','StatusText','PercentText','Progress','DetailText','PlayButton','VersionLabel')){$ui[$name]=$window.FindName($name)}
+$ui=@{};foreach($name in @('SettingsButton','AccountButton','HeroImage','UpdateSummary','UpdateButton','GameLocation','FolderButton','LocateButton','StatusText','PercentText','Progress','DetailText','PlayButton','VersionLabel')){$ui[$name]=$window.FindName($name)}
 $version=(Get-Content (Join-Path $root 'InstalledVersions.json') -Raw|ConvertFrom-Json).launcher;$ui.VersionLabel.Text='LAUNCHER '+$version
 $script:images=@();foreach($name in @('avengers-endgame.jpg','avengers-infinity-war.jpg')){$bitmap=[Windows.Media.Imaging.BitmapImage]::new();$bitmap.BeginInit();$bitmap.CacheOption='OnLoad';$bitmap.UriSource=[Uri]::new((Join-Path $root "Assets/$name"));$bitmap.EndInit();$bitmap.Freeze();$script:images+=,$bitmap}
 $ui.HeroImage.Source=$script:images[0];$script:filmIndex=0
-$artTimer=[Windows.Threading.DispatcherTimer]::new();$artTimer.Interval=[TimeSpan]::FromSeconds(18);$artTimer.Add_Tick({$script:filmIndex=1-$script:filmIndex;$ui.HeroImage.Source=$script:images[$script:filmIndex];$ui.FilmLabel.Text=@('AVENGERS: ENDGAME','AVENGERS: INFINITY WAR')[$script:filmIndex]})
+$artTimer=[Windows.Threading.DispatcherTimer]::new();$artTimer.Interval=[TimeSpan]::FromSeconds(18);$artTimer.Add_Tick({$script:filmIndex=1-$script:filmIndex;$ui.HeroImage.Source=$script:images[$script:filmIndex]})
 $script:worker=$null;$script:workerAction='';$script:available=$false;$script:fullAvailable=$false;$script:installed=$false;$script:restart=$false
 $workerLog=Join-Path $root '.updates/result.txt';$workerError=Join-Path $root '.updates/error.txt';$progressFile=Join-Path $root '.updates/progress.json'
 function Refresh-Game {
@@ -87,7 +87,7 @@ $window.Add_Closing({param($sender,$eventArgs) if($script:worker -and -not $scri
 $window.Add_Closed({$workerTimer.Stop();$artTimer.Stop()})
 Refresh-Game
 if($ValidateOnly){
- if($ui.Count -ne 15 -or $script:images.Count -ne 2){throw 'Launcher UI is incomplete.'}
+ if($ui.Count -ne 14 -or $script:images.Count -ne 2){throw 'Launcher UI is incomplete.'}
  if($PreviewPath){$window.WindowStartupLocation='Manual';$window.Left=-32000;$window.Top=-32000;$window.ShowInTaskbar=$false;$window.Show();$window.UpdateLayout();$render=[Windows.Media.Imaging.RenderTargetBitmap]::new([int]$window.ActualWidth,[int]$window.ActualHeight,96,96,[Windows.Media.PixelFormats]::Pbgra32);$render.Render($window);$encoder=[Windows.Media.Imaging.PngBitmapEncoder]::new();$encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($render));$stream=[IO.File]::Create($PreviewPath);$encoder.Save($stream);$stream.Dispose();$window.Close()}
  Write-Output "Validated launcher, $($choices.Count) display presets, folder selection and two artwork slides.";exit 0
 }
@@ -95,5 +95,6 @@ Save-Settings
 $window.Add_ContentRendered({$artTimer.Start();try{Start-Worker 'Check'}catch{$ui.StatusText.Text='Unable to check updates. You can still play.';Set-Busy $false}})
 try{[void]$window.ShowDialog()}finally{if($launcherLock){$launcherLock.Dispose()}}
 if($script:restart){Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $root 'Play.ps1')) -WindowStyle Hidden}
+
 
 
