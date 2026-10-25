@@ -1,4 +1,4 @@
-param([switch]$ValidateOnly,[string]$PreviewPath,[switch]$PreviewUpdate,[switch]$PreviewSetup,[switch]$PreviewSettings,[switch]$Recover)
+param([switch]$ValidateOnly,[string]$PreviewPath,[switch]$PreviewUpdate,[switch]$PreviewSetup,[switch]$PreviewSettings,[switch]$Recover,[ValidateSet('Live','Test')][string]$PreviewServer='Live')
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName PresentationFramework,PresentationCore,WindowsBase,System.Windows.Forms,System.Drawing
 . (Join-Path $PSScriptRoot 'UpdateCore.ps1')
@@ -8,7 +8,7 @@ $choices=@('Automatic (monitor resolution)','1280 x 720  |  16:9','1920 x 1080  
 $saved=Get-PlayerSettings $root
 if($saved.Resolution -notin $choices){$choices+=,[string]$saved.Resolution}
 function Save-Settings {Save-PlayerSettings $root $saved}
-function Open-AccountForm {Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $root 'CreateAccount.ps1')) -WindowStyle Hidden}
+function Open-AccountForm {Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}" -Server {1}' -f (Join-Path $root 'CreateAccount.ps1'),$saved.Server) -WindowStyle Hidden}
 function New-LauncherShortcut {
  $desktop=[Environment]::GetFolderPath('DesktopDirectory');$shell=New-Object -ComObject WScript.Shell
  $link=$shell.CreateShortcut((Join-Path $desktop 'Marvel Heroes Omega.lnk'))
@@ -42,31 +42,48 @@ if(-not $ValidateOnly){
 }
 [xml]$xaml=Get-Content (Join-Path $root 'Launcher.xaml') -Raw
 $reader=[Xml.XmlNodeReader]::new($xaml);$window=[Windows.Markup.XamlReader]::Load($reader)
-$ui=@{};foreach($name in @('SettingsButton','AccountButton','HeroImage','UpdateSummary','UpdateButton','GameLocation','FolderButton','LocateButton','StatusText','PercentText','Progress','DetailText','PlayButton','VersionLabel','UpdateNotice','UpdateHeading','UpdateCard','ConnectionButton')){$ui[$name]=$window.FindName($name)}
+$ui=@{};foreach($name in @('SettingsButton','AccountButton','HeroImage','UpdateSummary','UpdateButton','GameLocation','FolderButton','LocateButton','StatusText','PercentText','Progress','DetailText','PlayButton','VersionLabel','UpdateNotice','UpdateHeading','UpdateCard','ConnectionButton','LiveServerButton','TestServerButton','ServerNotice')){$ui[$name]=$window.FindName($name)}
 $version=(Get-Content (Join-Path $root 'InstalledVersions.json') -Raw|ConvertFrom-Json).launcher;$ui.VersionLabel.Text='LAUNCHER '+$version
 $script:images=@();foreach($name in @('avengers-endgame.jpg','avengers-infinity-war.jpg')){$bitmap=[Windows.Media.Imaging.BitmapImage]::new();$bitmap.BeginInit();$bitmap.CacheOption='OnLoad';$bitmap.UriSource=[Uri]::new((Join-Path $root "Assets/$name"));$bitmap.EndInit();$bitmap.Freeze();$script:images+=,$bitmap}
 $ui.HeroImage.Source=$script:images[0];$script:filmIndex=0
 $artTimer=[Windows.Threading.DispatcherTimer]::new();$artTimer.Interval=[TimeSpan]::FromSeconds(18);$artTimer.Add_Tick({$script:filmIndex=1-$script:filmIndex;$ui.HeroImage.Source=$script:images[$script:filmIndex]})
 $script:verified=$false;$script:busy=$false;$script:recoveryRequired=$false;$script:worker=$null;$script:workerAction='';$script:available=$false;$script:fullAvailable=$false;$script:installed=$false;$script:restart=$false
 $workerLog=Join-Path $root '.updates/result.txt';$workerError=Join-Path $root '.updates/error.txt';$progressFile=Join-Path $root '.updates/progress.json'
-$connectionState=@{process=$null};$connectionTimer=[Windows.Threading.DispatcherTimer]::new();$connectionTimer.Interval=[TimeSpan]::FromMilliseconds(300)
+$connectionState=@{process=$null;server=''};$connectionTimer=[Windows.Threading.DispatcherTimer]::new();$connectionTimer.Interval=[TimeSpan]::FromMilliseconds(300)
+function Sync-ServerChoice {
+ $profile=Get-ServerProfile $saved.Server
+ $ui.LiveServerButton.IsChecked=$saved.Server -eq 'Live';$ui.TestServerButton.IsChecked=$saved.Server -eq 'Test'
+ $ui.ServerNotice.Text=$profile.Notice
+ $window.Title='Marvel Heroes Omega — '+$profile.Name
+ if($script:installed){$ui.PlayButton.Content=if($saved.Server -eq 'Test'){'PLAY TEST'}else{'PLAY LIVE'}}
+}
+function Select-Server([string]$Name){
+ if($script:busy -or $saved.Server -eq $Name){return}
+ $saved.Server=$Name;Save-Settings;Sync-ServerChoice;Start-ConnectionCheck
+ $ui.ConnectionButton.Content='Checking '+(Get-ServerProfile $Name).Name+'...'
+ $ui.DetailText.Text=(Get-ServerProfile $Name).Notice
+}
+$ui.LiveServerButton.Add_Click({Select-Server 'Live'});$ui.TestServerButton.Add_Click({Select-Server 'Test'})
 function Start-ConnectionCheck {
  if($connectionState.process -and -not $connectionState.process.HasExited){return}
  [IO.Directory]::CreateDirectory((Join-Path $root '.updates'))|Out-Null
- $ui.ConnectionButton.Content='Checking server...'
- $args='-NoProfile -ExecutionPolicy Bypass -File "{0}" -CheckConnection' -f (Join-Path $root 'StartGame.ps1')
+ $connectionState.server=$saved.Server
+ $ui.ConnectionButton.Content='Checking '+(Get-ServerProfile $saved.Server).Name+'...'
+ $args='-NoProfile -ExecutionPolicy Bypass -File "{0}" -CheckConnection -Server {1}' -f (Join-Path $root 'StartGame.ps1'),$saved.Server
  $connectionState.process=Start-Process (Get-Process -Id $PID).Path -ArgumentList $args -WindowStyle Hidden -RedirectStandardOutput (Join-Path $root '.updates/connection.json') -RedirectStandardError (Join-Path $root '.updates/connection-error.txt') -PassThru
  $connectionTimer.Start()
 }
 $connectionTimer.Add_Tick({
  if(-not $connectionState.process.HasExited){return};$connectionTimer.Stop()
- try{$report=Read-SharedText (Join-Path $root '.updates/connection.json')|ConvertFrom-Json;$ui.ConnectionButton.Content=if($report.Reachable){'Server reachable  ·  Login help'}else{'Connection problem  ·  Get help'};$ui.ConnectionButton.ToolTip=($report.Checks|ForEach-Object {"$($_.Name): $($_.Message)"}) -join "`n"}catch{$ui.ConnectionButton.Content='Connection check failed  ·  Get help'}
+ if($connectionState.server -ne $saved.Server){Start-ConnectionCheck;return}
+ try{$report=Read-SharedText (Join-Path $root '.updates/connection.json')|ConvertFrom-Json;$ui.ConnectionButton.Content=if($report.Reachable){$report.ServerName+' reachable  ·  Login help'}else{$report.ServerName+' connection problem  ·  Get help'};$ui.ConnectionButton.ToolTip=($report.Checks|ForEach-Object {"$($_.Name): $($_.Message)"}) -join "`n"}catch{$ui.ConnectionButton.Content='Connection check failed  ·  Get help'}
 })
 function Refresh-Game {
  $script:installed=$false
  if(Test-Path -LiteralPath $saved.ClientPath){$script:installed=$null -ne (Get-ChildItem -LiteralPath $saved.ClientPath -Recurse -Filter MarvelHeroesOmega.exe -File -ErrorAction SilentlyContinue|Where-Object {$_.FullName -match '\\Win64\\' -and $_.FullName -notmatch '\\.mh-updates\\'}|Select-Object -First 1)}
  $ui.GameLocation.Text=$saved.ClientPath
  $ui.PlayButton.Content=if($script:installed){'PLAY'}else{'INSTALL GAME'}
+ Sync-ServerChoice
  Sync-UpdateState
 }
 function Sync-UpdateState {
@@ -80,7 +97,7 @@ function Sync-UpdateState {
  $ui.UpdateButton.Foreground=if($script:available){[Windows.Media.Brushes]::Black}else{[Windows.Media.BrushConverter]::new().ConvertFromString('#E6D29D')}
  if($script:available -and -not $script:busy){$ui.StatusText.Text='Update required before playing.';$ui.DetailText.Text='Select INSTALL UPDATE above. Play unlocks after installation completes.'}
 }
-function Set-Busy([bool]$Busy){$script:busy=$Busy;foreach($key in @('SettingsButton','AccountButton','FolderButton','LocateButton','UpdateButton')){$ui[$key].IsEnabled=-not $Busy};Sync-UpdateState}
+function Set-Busy([bool]$Busy){$script:busy=$Busy;foreach($key in @('SettingsButton','AccountButton','FolderButton','LocateButton','UpdateButton','LiveServerButton','TestServerButton')){$ui[$key].IsEnabled=-not $Busy};Sync-UpdateState}
 function Select-GameFolder([bool]$Existing){
  $dialog=[System.Windows.Forms.FolderBrowserDialog]::new();$dialog.Description=if($Existing){'Select the folder containing your Marvel Heroes game'}else{'Choose a dedicated game installation folder'};$dialog.UseDescriptionForTitle=$true
  $dialog.SelectedPath=$saved.ClientPath
@@ -123,7 +140,7 @@ function Show-GameSettings {
 }
 $ui.SettingsButton.Add_Click({Show-GameSettings})
 $ui.AccountButton.Add_Click({Open-AccountForm})
-$ui.ConnectionButton.Add_Click({Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}" -ConnectionHelp' -f (Join-Path $root 'CreateAccount.ps1')) -WindowStyle Hidden})
+$ui.ConnectionButton.Add_Click({Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}" -ConnectionHelp -Server {1}' -f (Join-Path $root 'CreateAccount.ps1'),$saved.Server) -WindowStyle Hidden})
 $workerTimer=[Windows.Threading.DispatcherTimer]::new();$workerTimer.Interval=[TimeSpan]::FromMilliseconds(200)
 function Start-Worker([string]$Action){
  if($Action -eq 'Launch' -and (-not $script:verified -or $script:available -or $script:recoveryRequired)){Sync-UpdateState;return}
@@ -144,6 +161,7 @@ function Start-Worker([string]$Action){
  $scriptFile=if($Action -eq 'Launch'){'StartGame.ps1'}else{'Update.ps1'}
  $arguments='-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $root $scriptFile)
  if($Action -ne 'Launch'){$arguments+=' -Action '+$Action}
+ if($Action -eq 'Launch'){$arguments+=' -Server '+$saved.Server}
  $script:worker=Start-Process (Get-Process -Id $PID).Path -ArgumentList $arguments -WindowStyle Hidden -RedirectStandardOutput $workerLog -RedirectStandardError $workerError -PassThru
  Set-Busy $true;$ui.Progress.IsIndeterminate=$true;$ui.PercentText.Text=''
  $ui.StatusText.Text=switch($Action){'Check'{'Checking for updates...'}'Launch'{'Opening Marvel Heroes Omega...'}'InstallGame'{'Preparing your game installation...'}default{'Preparing updates...'}}
@@ -167,7 +185,7 @@ $workerTimer.Add_Tick({
  } elseif($script:workerAction -eq 'Check'){
   try{$result=Get-Content $workerLog -Raw|ConvertFrom-Json;$script:verified=$true;$script:recoveryRequired=$false;$script:available=$result.available;$script:fullAvailable=$result.fullAvailable;$ui.UpdateSummary.Text=if($result.available){'Available: '+$result.summary}else{'You have the latest launcher and available patches.'};$ui.UpdateButton.Content=if($result.available){'Install updates'}else{'Check for updates'};$ui.StatusText.Text=if($script:installed){'Ready to assemble.'}elseif($result.fullAvailable){'Choose your installation folder, then select Install Game.'}else{'Use Locate existing game. Full download is coming soon.'}}catch{$ui.StatusText.Text='Unable to read update status. Retry to unlock Play.'}
  } else{Refresh-Game;$ui.UpdateSummary.Text='Installation complete. Checking versions...';Start-Worker 'Check';return}
- $ui.DetailText.Text='Sign in inside the game. Your account progress stays on the server.'
+ $ui.DetailText.Text=(Get-ServerProfile $saved.Server).Notice
  Sync-UpdateState
 })
 $window.Add_Closing({param($sender,$eventArgs) if($script:worker -and -not $script:worker.HasExited -and $script:workerAction -in @('Update','InstallGame')){$eventArgs.Cancel=$true;$ui.StatusText.Text='Please wait while the installation finishes.'}})
@@ -176,7 +194,7 @@ Refresh-Game
 if($ValidateOnly){
  Show-FirstTimeSetup
  Show-GameSettings
- if($ui.Count -ne 18 -or $script:images.Count -ne 2){throw 'Launcher UI is incomplete.'}
+ if($ui.Count -ne 21 -or $script:images.Count -ne 2){throw 'Launcher UI is incomplete.'}
  # Exercise the actual button gate, including failed checks and retries.
  foreach($case in @(
   @{verified=$false;available=$false;busy=$false;recovery=$false;enabled=$false},
@@ -192,6 +210,7 @@ if($ValidateOnly){
  $script:busy=$false;$script:recoveryRequired=$false;$script:verified=-not $PreviewUpdate;$script:available=[bool]$PreviewUpdate
  if($PreviewUpdate){$ui.UpdateSummary.Text='A new launcher update is ready to install.';$ui.PlayButton.Content='PLAY'}
  Sync-UpdateState
+ $saved.Server=$PreviewServer;Sync-ServerChoice
  if($PreviewPath -and -not $PreviewSetup -and -not $PreviewSettings){$window.WindowStartupLocation='Manual';$window.Left=-32000;$window.Top=-32000;$window.ShowInTaskbar=$false;$window.Show();$window.UpdateLayout();$render=[Windows.Media.Imaging.RenderTargetBitmap]::new([int]$window.ActualWidth,[int]$window.ActualHeight,96,96,[Windows.Media.PixelFormats]::Pbgra32);$render.Render($window);$encoder=[Windows.Media.Imaging.PngBitmapEncoder]::new();$encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($render));$stream=[IO.File]::Create($PreviewPath);$encoder.Save($stream);$stream.Dispose();$window.Close()}
  Write-Output "Validated launcher, $($choices.Count) display presets, folder selection and two artwork slides.";exit 0
 }

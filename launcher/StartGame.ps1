@@ -1,15 +1,17 @@
-param([switch]$ValidateOnly,[switch]$CheckConnection)
+param([switch]$ValidateOnly,[switch]$CheckConnection,[ValidateSet('Live','Test')][string]$Server)
 $ErrorActionPreference='Stop'
 try {
 . (Join-Path $PSScriptRoot 'UpdateCore.ps1')
-if($CheckConnection){Test-MarvelConnection|ConvertTo-Json -Depth 5 -Compress;exit 0}
 $settings=Get-PlayerSettings $PSScriptRoot
+if($Server){$settings.Server=$Server}
+if($CheckConnection){Test-MarvelConnection -Profile $settings.Server|ConvertTo-Json -Depth 5 -Compress;exit 0}
+$profile=Get-ServerProfile $settings.Server
 $display=Get-GameDisplay $settings;$width=$display.Width;$height=$display.Height
 $mode=[string]$settings.Mode;if($mode -notin @('Windowed','Fullscreen','Borderless')){throw 'Invalid display mode.'}
 $borderless=$mode -eq 'Borderless';if($borderless){$mode='Windowed'}
-$clientArgs="-robocopy -nosteam -siteconfigurl=myfamilyflix.duckdns.org/SiteConfig.xml -ResX=$width -ResY=$height -$mode"
+$clientArgs=Get-GameLaunchArguments $settings $display
 if($ValidateOnly){Write-Output $clientArgs;Write-Output "Monitor: $($display.Device); borderless: $borderless";exit 0}
-$connection=Test-MarvelConnection
+$connection=Test-MarvelConnection -Profile $settings.Server
 if(-not $connection.Reachable){throw (($connection.Checks|Where-Object {-not $_.Ok}|ForEach-Object {"$($_.Name): $($_.Message)"}) -join ' ')}
 if(Get-Process MarvelHeroesOmega -ErrorAction SilentlyContinue){throw 'The game is already running.'}
 $folder=$settings.ClientPath

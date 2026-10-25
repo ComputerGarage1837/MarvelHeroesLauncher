@@ -8,21 +8,24 @@
    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="Surface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="9"><ContentPresenter x:Name="ButtonContent" Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Opacity" Value="0.8"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="Surface" Property="Background" Value="#252525"/><Setter TargetName="Surface" Property="BorderBrush" Value="#3B3B3B"/><Setter TargetName="ButtonContent" Property="TextElement.Foreground" Value="#888888"/><Setter Property="Effect" Value="{x:Null}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
   </Style>
   <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style>
+  <Style x:Key="ServerChoice" TargetType="RadioButton"><Setter Property="Foreground" Value="#D4AF62"/><Setter Property="Background" Value="#080808"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RadioButton"><Border x:Name="Tab" Background="{TemplateBinding Background}" BorderBrush="#605338" BorderThickness="1" CornerRadius="8" Padding="12,10"><ContentPresenter HorizontalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Tab" Property="Background" Value="#D4AF62"/><Setter Property="Foreground" Value="Black"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="Tab" Property="Opacity" Value="0.6"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
  </Window.Resources>
  <Grid>
   <Grid.RowDefinitions><RowDefinition Height="76"/><RowDefinition Height="*"/><RowDefinition Height="178"/><RowDefinition Height="134"/><RowDefinition Height="42"/></Grid.RowDefinitions>
   <Border Grid.Row="0" BorderBrush="#332D20" BorderThickness="0,0,0,1">
-   <Grid Margin="30,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <Grid Margin="30,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
     <StackPanel VerticalAlignment="Center"><TextBlock Text="MARVEL HEROES" Foreground="#D4AF62" FontSize="23" FontWeight="Bold"/><TextBlock Text="O M E G A   /   C O M M U N I T Y   L A U N C H E R" FontSize="9" Foreground="#8D8678" Margin="1,4,0,0"/></StackPanel>
-    <Border x:Name="UpdateNotice" Grid.Column="1" Background="#D4AF62" CornerRadius="10" Padding="12,7" VerticalAlignment="Center" Margin="0,0,18,0" Visibility="Collapsed"><TextBlock Text="UPDATE AVAILABLE" Foreground="#000000" FontSize="11" FontWeight="Bold"/></Border>
-    <Button x:Name="SettingsButton" Grid.Column="2" Content="Game settings" Margin="0,18,12,18"/>
-    <Button x:Name="AccountButton" Grid.Column="3" Content="Create account" Margin="0,18,0,18"/>
+    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,18,0"><RadioButton x:Name="LiveServerButton" Content="Live Server" GroupName="Server" Style="{StaticResource ServerChoice}" FontSize="11" FontWeight="SemiBold" Margin="0,0,6,0"/><RadioButton x:Name="TestServerButton" Content="Test Server" GroupName="Server" Style="{StaticResource ServerChoice}" FontSize="11" FontWeight="SemiBold"/></StackPanel>
+    <Border x:Name="UpdateNotice" Grid.Column="2" Background="#D4AF62" CornerRadius="10" Padding="12,7" VerticalAlignment="Center" Margin="0,0,18,0" Visibility="Collapsed"><TextBlock Text="UPDATE AVAILABLE" Foreground="#000000" FontSize="11" FontWeight="Bold"/></Border>
+    <Button x:Name="SettingsButton" Grid.Column="3" Content="Game settings" Margin="0,18,12,18"/>
+    <Button x:Name="AccountButton" Grid.Column="4" Content="Create account" Margin="0,18,0,18"/>
    </Grid>
   </Border>
   <Grid Grid.Row="1" ClipToBounds="True">
    <Image x:Name="HeroImage" Stretch="UniformToFill" HorizontalAlignment="Stretch" RenderOptions.BitmapScalingMode="HighQuality"/>
    <Border><Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,0"><GradientStop Color="#FF000000" Offset="0"/><GradientStop Color="#C0000000" Offset="0.23"/><GradientStop Color="#18000000" Offset="0.47"/><GradientStop Color="#00000000" Offset="0.65"/></LinearGradientBrush></Border.Background></Border>
    <Border><Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#00000000" Offset="0.82"/><GradientStop Color="#FF000000" Offset="1"/></LinearGradientBrush></Border.Background></Border>
+   <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="24,18,32,0" MaxWidth="380" Background="#DD000000" CornerRadius="9" Padding="12,9"><TextBlock x:Name="ServerNotice" FontSize="12" Foreground="#E6D29D"/></Border>
    <StackPanel Margin="40,26,0,24" VerticalAlignment="Center" HorizontalAlignment="Left" Width="380">
     <TextBlock Text="THE HEROES RETURN" Foreground="#D4AF62" FontSize="11" FontWeight="Bold" Margin="2,0,0,13"/>
     <TextBlock Text="ASSEMBLE.&#10;AGAIN." FontSize="51" FontWeight="Bold" LineHeight="51" LineStackingStrategy="BlockLineHeight"/>

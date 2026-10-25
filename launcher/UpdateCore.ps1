@@ -36,12 +36,12 @@ function Get-PlayerSettingsPath([string]$LauncherRoot){
  return Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) "MarvelHeroesLauncher/$key/settings.json"
 }
 function Get-PlayerSettings([string]$LauncherRoot){
- $settings=@{Resolution='Automatic (monitor resolution)';Mode='Windowed';Monitor='';ClientPath=(Join-Path $LauncherRoot 'Client');SetupComplete=$false}
+ $settings=@{Resolution='Automatic (monitor resolution)';Mode='Windowed';Monitor='';ClientPath=(Join-Path $LauncherRoot 'Client');SetupComplete=$false;Server='Live'}
  $path=Get-PlayerSettingsPath $LauncherRoot
  $existingInstall=(Test-Path -LiteralPath $path) -or (Test-Path -LiteralPath (Join-Path $LauncherRoot 'LauncherSettings.json')) -or (Test-Path -LiteralPath (Join-Path $LauncherRoot '.updates')) -or (Test-Path -LiteralPath (Join-Path $LauncherRoot '.launcher.lock'))
  if(-not(Test-Path -LiteralPath $path)){$path=Join-Path $LauncherRoot 'LauncherSettings.json'}
  if(Test-Path -LiteralPath $path){
-  try{$old=Read-SharedText $path|ConvertFrom-Json -AsHashtable;foreach($key in @('Resolution','Monitor','ClientPath','SetupComplete')){if($old.ContainsKey($key)){$settings[$key]=$old[$key]}};if($old.Mode -in @('Windowed','Fullscreen','Borderless')){$settings.Mode=$old.Mode}}catch{throw 'Your saved settings could not be read. Keep a copy of settings.json before repairing it.'}
+  try{$old=Read-SharedText $path|ConvertFrom-Json -AsHashtable;foreach($key in @('Resolution','Monitor','ClientPath','SetupComplete')){if($old.ContainsKey($key)){$settings[$key]=$old[$key]}};if($old.Mode -in @('Windowed','Fullscreen','Borderless')){$settings.Mode=$old.Mode};if($old.ContainsKey('Server') -and $old.Server -in @('Live','Test')){$settings.Server=$old.Server}}catch{throw 'Your saved settings could not be read. Keep a copy of settings.json before repairing it.'}
  }
  $settings.SetupComplete=[bool]$settings.SetupComplete -or $existingInstall
  return $settings
@@ -125,18 +125,34 @@ function Get-LoginFailureMessage([int]$Code){
   default {'The game could not complete login. Run the connection check. If all connections pass, give the server owner the error shown in the game.'}
  }
 }
-function Test-MarvelConnection([string]$Server='myfamilyflix.duckdns.org',[int]$GamePort=4306){
+function Get-ServerProfile([ValidateSet('Live','Test')][string]$Name='Live'){
+ if($Name -eq 'Test'){
+  return [pscustomobject]@{Key='Test';Name='Test Server';SiteConfig='http://myfamilyflix.duckdns.org/SiteConfigTest.xml';Auth='https://myfamilyflix.duckdns.org/TestAuthServer/Login/IndexPB';Registration='https://myfamilyflix.duckdns.org/marvel/test/accounts/create';GameHost='myfamilyflix.duckdns.org';GamePort=14306;Notice='Tahiti test world: separate accounts and progress. Test progress may reset.'}
+ }
+ return [pscustomobject]@{Key='Live';Name='Live Server';SiteConfig='http://myfamilyflix.duckdns.org/SiteConfig.xml';Auth='https://myfamilyflix.duckdns.org/AuthServer/Login/IndexPB';Registration='https://myfamilyflix.duckdns.org/marvel/accounts/create';GameHost='myfamilyflix.duckdns.org';GamePort=4306;Notice='Live world: your regular accounts and characters.'}
+}
+function Get-GameLaunchArguments($Settings,$Display){
+ $profile=Get-ServerProfile $Settings.Server
+ $mode=if($Settings.Mode -eq 'Borderless'){'Windowed'}else{[string]$Settings.Mode}
+ if($mode -notin @('Windowed','Fullscreen')){throw 'Invalid display mode.'}
+ return "-robocopy -nosteam -siteconfigurl=$($profile.SiteConfig) -ResX=$($Display.Width) -ResY=$($Display.Height) -$mode"
+}
+function Test-MarvelConnection([string]$Server='',[int]$GamePort=0,[ValidateSet('Live','Test')][string]$Profile='Live'){
+ $selected=Get-ServerProfile $Profile
+ $hostName=if($Server){$Server}else{$selected.GameHost};if(-not $GamePort){$GamePort=$selected.GamePort}
+ $configUrl=if($Server){"http://$Server/SiteConfig.xml"}else{$selected.SiteConfig}
+ $authUrl=if($Server){"https://$Server/AuthServer/Login/IndexPB"}else{$selected.Auth}
  $checks=@()
  $handler=[Net.Http.HttpClientHandler]::new();$handler.AllowAutoRedirect=$false
  $http=[Net.Http.HttpClient]::new($handler);$http.Timeout=[TimeSpan]::FromSeconds(6)
  try{
-  foreach($route in @(@{name='Configuration';url="http://$Server/SiteConfig.xml"},@{name='Login service';url="https://$Server/AuthServer/Login/IndexPB"})){
+  foreach($route in @(@{name='Configuration';url=$configUrl},@{name='Login service';url=$authUrl})){
    $response=$null
    try{
     $response=$http.GetAsync($route.url).GetAwaiter().GetResult();$code=[int]$response.StatusCode
     if($route.name -eq 'Configuration'){
      $valid=$false
-     if($code -eq 200){try{$xml=[xml]$response.Content.ReadAsStringAsync().GetAwaiter().GetResult();$valid=$null -ne $xml.SelectSingleNode('/config/str[@name="AuthServerAddress"]') -and $xml.SelectSingleNode('/config/str[@name="AuthServerPort"]').value -eq '443'}catch{$valid=$false}}
+     if($code -eq 200){try{$xml=[xml]$response.Content.ReadAsStringAsync().GetAwaiter().GetResult();$expectedAuth=[Uri]$authUrl;$valid=$xml.SelectSingleNode('/config/str[@name="AuthServerAddress"]').value -eq $expectedAuth.Host -and $xml.SelectSingleNode('/config/str[@name="AuthServerPort"]').value -eq '443' -and $xml.SelectSingleNode('/config/str[@name="AuthServerUrl"]').value -eq $expectedAuth.AbsolutePath}catch{$valid=$false}}
     }else{$valid=$code -eq 405} # GET is intentionally rejected; this is not a player's login result.
     $message=if($valid){'Reachable'}elseif($code -ge 500){'Server unavailable. Try again later.'}else{"Unexpected response ($code). Ask the server owner to check this route."}
     $checks+=,[pscustomobject]@{Name=$route.name;Ok=$valid;Message=$message}
@@ -144,8 +160,8 @@ function Test-MarvelConnection([string]$Server='myfamilyflix.duckdns.org',[int]$
   }
  }finally{$http.Dispose();$handler.Dispose()}
  $tcp=[Net.Sockets.TcpClient]::new()
- try{$task=$tcp.ConnectAsync($Server,$GamePort);if(-not $task.Wait(6000) -or -not $tcp.Connected){throw 'Timeout'};$checks+=,[pscustomobject]@{Name='Game connection';Ok=$true;Message='Reachable'}}catch{$checks+=,[pscustomobject]@{Name='Game connection';Ok=$false;Message='Game port is unreachable. Check firewall access or ask the server owner to check the game service and port forwarding.'}}finally{$tcp.Dispose()}
- return [pscustomobject]@{Reachable=(@($checks|Where-Object {-not $_.Ok}).Count -eq 0);CheckedAt=[DateTime]::Now.ToString('HH:mm:ss');Checks=$checks}
+ try{$task=$tcp.ConnectAsync($hostName,$GamePort);if(-not $task.Wait(6000) -or -not $tcp.Connected){throw 'Timeout'};$checks+=,[pscustomobject]@{Name='Game connection';Ok=$true;Message='Reachable'}}catch{$checks+=,[pscustomobject]@{Name='Game connection';Ok=$false;Message='Game port is unreachable. Check firewall access or ask the server owner to check the game service and port forwarding.'}}finally{$tcp.Dispose()}
+ return [pscustomobject]@{Server=$Profile;ServerName=$selected.Name;Reachable=(@($checks|Where-Object {-not $_.Ok}).Count -eq 0);CheckedAt=[DateTime]::Now.ToString('HH:mm:ss');Checks=$checks}
 }
 function Test-ProtectedClientFile([string]$Root,[string]$Relative){
  $path=Get-SafePath $Root $Relative

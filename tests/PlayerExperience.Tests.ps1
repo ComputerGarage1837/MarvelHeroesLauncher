@@ -17,12 +17,20 @@ $legacy=Join-Path $testRoot 'LauncherSettings.json'
 Write-JsonAtomic @{Resolution='3440 x 1440  |  Ultrawide 21:9';Mode='Fullscreen';ClientPath=(Join-Path $testRoot 'Game')} $legacy
 $settings=Get-PlayerSettings $testRoot
 Check ($settings.Mode -eq 'Fullscreen' -and $settings.Resolution -like '3440*') 'Existing display choices migrate without changing them'
+Check ($settings.Server -eq 'Live') 'Existing players default to Live Server'
 Check $settings.SetupComplete 'Existing player settings suppress first-run pages'
-$settings.Mode='Borderless';$settings.SetupComplete=$true;Save-PlayerSettings $testRoot $settings
+$settings.Mode='Borderless';$settings.SetupComplete=$true;$settings.Server='Test';Save-PlayerSettings $testRoot $settings
 try {
  Write-JsonAtomic @{Resolution='1280 x 720';Mode='Windowed'} $legacy
  $loaded=Get-PlayerSettings $testRoot
  Check ($loaded.Mode -eq 'Borderless' -and $loaded.SetupComplete -and $loaded.Resolution -like '3440*') 'Per-user choices survive replacement of legacy launcher settings'
+ Check ($loaded.Server -eq 'Test') 'Selected server is remembered with player settings'
+ $live=Get-ServerProfile Live;$test=Get-ServerProfile Test
+ Check ($live.Auth -ne $test.Auth -and $live.Registration -ne $test.Registration -and $live.GamePort -ne $test.GamePort) 'Live and Test use separate login, registration, and game routes'
+ $displayStub=[pscustomobject]@{Width=1920;Height=1080}
+ $loaded.Server='Live';$liveArgs=Get-GameLaunchArguments $loaded $displayStub
+ $loaded.Server='Test';$testArgs=Get-GameLaunchArguments $loaded $displayStub
+ Check ($liveArgs.Contains('-siteconfigurl='+$live.SiteConfig) -and $testArgs.Contains('-siteconfigurl='+$test.SiteConfig)) 'Launching follows the selected server configuration'
  Check ((Get-PlayerSettingsPath $testRoot).StartsWith([Environment]::GetFolderPath('LocalApplicationData'))) 'Player settings live outside the launcher update folder'
  $display=Get-GameDisplay $loaded
  Check ($display.Width -eq $display.NativeWidth -and $display.Height -eq $display.NativeHeight) 'Borderless uses detected native resolution'

@@ -1,4 +1,4 @@
-param([switch]$ValidateOnly, [string]$PreviewPath,[switch]$ConnectionHelp)
+param([switch]$ValidateOnly, [string]$PreviewPath,[switch]$ConnectionHelp,[ValidateSet('Live','Test')][string]$Server)
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -6,6 +6,8 @@ Add-Type -AssemblyName System.Net.Http
 [System.Windows.Forms.Application]::EnableVisualStyles()
 . (Join-Path $PSScriptRoot 'UpdateCore.ps1')
 Set-StrictMode -Off
+if(-not $Server){$Server=(Get-PlayerSettings $PSScriptRoot).Server}
+$profile=Get-ServerProfile $Server
 if($ConnectionHelp){
  $help=[Windows.Forms.Form]::new();$help.Text='Server connection and login help';$help.ClientSize=[Drawing.Size]::new(650,570);$help.StartPosition='CenterScreen';$help.FormBorderStyle='FixedDialog';$help.MaximizeBox=$false;$help.BackColor=[Drawing.Color]::Black;$help.ForeColor=[Drawing.Color]::WhiteSmoke;$help.Font=[Drawing.Font]::new('Segoe UI',11)
  $heading=[Windows.Forms.Label]::new();$heading.Text='CONNECTION AND LOGIN HELP';$heading.Font=[Drawing.Font]::new('Segoe UI',19,[Drawing.FontStyle]::Bold);$heading.ForeColor=[Drawing.Color]::FromArgb(212,175,98);$heading.SetBounds(24,20,600,38);$help.Controls.Add($heading)
@@ -18,11 +20,11 @@ if($ConnectionHelp){
  $reason.Add_SelectedIndexChanged({$explanation.Text=Get-LoginFailureMessage $reasons[$reason.SelectedIndex].code});$reason.SelectedIndex=0
  $retry=[Windows.Forms.Button]::new();$retry.Text='Check again';$retry.SetBounds(24,490,180,36);$help.Controls.Add($retry)
  $register=[Windows.Forms.Button]::new();$register.Text='Create account';$register.SetBounds(220,490,180,36);$help.Controls.Add($register)
- $register.Add_Click({Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}"' -f $PSCommandPath) -WindowStyle Hidden})
+ $register.Add_Click({Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}" -Server {1}' -f $PSCommandPath,$Server) -WindowStyle Hidden})
  $probeState=@{shell=$null;pending=$null};$probeTimer=[Windows.Forms.Timer]::new();$probeTimer.Interval=200
  function Start-Probe {
   $retry.Enabled=$false;$health.Text='Checking configuration, login service, and game connection...'
-  $probeState.shell=[powershell]::Create();$null=$probeState.shell.AddScript('param($core) . $core; Test-MarvelConnection').AddArgument((Join-Path $PSScriptRoot 'UpdateCore.ps1'));$probeState.pending=$probeState.shell.BeginInvoke();$probeTimer.Start()
+  $probeState.shell=[powershell]::Create();$null=$probeState.shell.AddScript('param($core,$server) . $core; Test-MarvelConnection -Profile $server').AddArgument((Join-Path $PSScriptRoot 'UpdateCore.ps1')).AddArgument($Server);$probeState.pending=$probeState.shell.BeginInvoke();$probeTimer.Start()
  }
  $retry.Add_Click({Start-Probe})
  $probeTimer.Add_Tick({
@@ -30,12 +32,13 @@ if($ConnectionHelp){
   try{$report=@($probeState.shell.EndInvoke($probeState.pending))[0];if(-not $report){throw 'Empty connection report'};$summary=if($report.Reachable){'Server reachable. Credentials are checked when you sign in inside the game.'}else{'A connection needs attention:'};$health.Text=$summary+"`r`n`r`n"+(($report.Checks|ForEach-Object {"$($_.Name): $($_.Message)"}) -join "`r`n")+"`r`nChecked at "+$report.CheckedAt}catch{$health.Text='The connection check could not finish. Check your internet connection, then try again.'}finally{$probeState.shell.Dispose();$probeState.shell=$null;$retry.Enabled=$true}
  })
  $help.Add_FormClosed({$probeTimer.Stop();if($probeState.shell){$probeState.shell.Stop();$probeState.shell.Dispose()}})
- if($ValidateOnly){if($PreviewPath){Export-FormPreview $help $PreviewPath};Write-Output 'Connection help validated.'}else{$help.Add_Shown({Start-Probe});[void]$help.ShowDialog()}
+ $help.Text=$profile.Name+' — Connection and login help'
+ if($ValidateOnly){if($PreviewPath){Export-FormPreview $help $PreviewPath};Write-Output ('Connection help validated for '+$profile.Name)}else{$help.Add_Shown({Start-Probe});[void]$help.ShowDialog()}
  $probeTimer.Dispose();$help.Dispose();exit 0
 }
-$endpoint='https://myfamilyflix.duckdns.org/marvel/accounts/create'
+$endpoint=$profile.Registration
 $form=[System.Windows.Forms.Form]::new()
-$form.Text='Marvel Heroes - Create Account'
+$form.Text='Marvel Heroes — '+$profile.Name+' — Create Account'
 $form.ClientSize=[System.Drawing.Size]::new(500,510)
 $form.StartPosition='CenterScreen'; $form.FormBorderStyle='FixedDialog'; $form.MaximizeBox=$false
 $form.AutoScaleMode='Dpi'; $form.Font=[System.Drawing.Font]::new('Segoe UI',10)
@@ -45,7 +48,8 @@ function Add-Label($text,$y,$height=25){
 }
 $title=Add-Label 'CREATE YOUR ACCOUNT' 22 34
 $title.Font=[System.Drawing.Font]::new('Segoe UI',18,[System.Drawing.FontStyle]::Bold)
-$null=Add-Label 'Use this email and password to sign in inside the game.' 64
+$accountHint=if($Server -eq 'Test'){'Test Server: creates a separate test account.'}else{'Live Server: your regular account and character world.'}
+$null=Add-Label $accountHint 64
 function Add-Field($label,$y,$secret=$false){
  $null=Add-Label $label $y
  $box=[System.Windows.Forms.TextBox]::new(); $box.SetBounds(28,($y+26),444,29)
