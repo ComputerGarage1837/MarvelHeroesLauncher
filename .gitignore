@@ -1,0 +1,7 @@
+dist/
+launcher/LauncherSettings.json
+launcher/Client/
+launcher/.updates/
+launcher/.launcher.lock
+launcher/*.log
+tests/sandbox-*/

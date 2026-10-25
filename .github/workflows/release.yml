@@ -1,0 +1,51 @@
+name: Publish launcher and client updates
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'New launcher version, e.g. 1.1.1'
+        required: true
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test updater and validate launcher
+        shell: pwsh
+        run: |
+          ./tests/Update.Tests.ps1
+          pwsh -NoProfile -STA -File ./launcher/Play.ps1 -ValidateOnly
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher validation failed' }
+      - name: Prepare release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          $version = if ($env:REQUESTED_VERSION) { $env:REQUESTED_VERSION } else { $env:GITHUB_REF_NAME.TrimStart('v') }
+          if ($version -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') { throw 'Invalid version' }
+          New-Item -ItemType Directory dist -Force | Out-Null
+          gh release download --repo $env:REPOSITORY --pattern update-manifest.json --dir dist
+          if (Test-Path dist/update-manifest.json) {
+            Move-Item dist/update-manifest.json dist/previous-manifest.json
+            gh release download --repo $env:REPOSITORY --pattern 'client-*' --dir dist --clobber
+          }
+          gh release download client-patches --repo $env:REPOSITORY --pattern 'client-*' --dir dist --clobber
+          $global:LASTEXITCODE = 0
+          ./tools/BuildRelease.ps1 -Repository $env:REPOSITORY -Version $version
+          "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $assets = @(Get-ChildItem dist -File | Where-Object { $_.Name -eq 'update-manifest.json' -or $_.Name -like 'launcher-*.zip' -or $_.Name -eq 'MarvelHeroesLauncher-Install.zip' -or $_.Name -match '^client-.*\.zip(\.part\d+)?$' } | ForEach-Object FullName)
+          $assets = @($assets | Where-Object { $_ -notmatch 'client-full-.*\.zip$' })
+          gh release create "v$env:RELEASE_VERSION" @assets --repo $env:REPOSITORY --title "Marvel Heroes Launcher $env:RELEASE_VERSION" --notes 'Launcher update with the latest available game installation and patch packages.' --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publishing failed' }

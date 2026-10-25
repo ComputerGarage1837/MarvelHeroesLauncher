@@ -1,0 +1,22 @@
+MARVEL HEROES OMEGA - BLACK & GOLD LAUNCHER
+
+Extract into a writable launcher folder. Existing LauncherSettings.json and
+Client files are preserved because this download does not contain them.
+Run Play.bat using PowerShell 7 for Windows.
+
+Locate existing game: select the folder containing your Win64 client.
+Choose folder: select a dedicated folder for a future full-game installation.
+Install Game becomes available when the host publishes the full client.
+Game settings: resolution and window/fullscreen controls.
+Create account: secure registration; sign in inside the game.
+Play: the launcher closes automatically after the game window opens.
+
+Updates are checked at startup. Click Install updates when available.
+Download progress is displayed. Downloads are verified before installation.
+Interrupted downloads can resume. Failed installations roll back changed files.
+The launcher reopens after updating itself. Close the game before updating.
+
+Repository and releases:
+https://github.com/ComputerGarage1837/MarvelHeroesLauncher
+
+No server-address entry is needed. No Tailscale or player GitHub account required.
