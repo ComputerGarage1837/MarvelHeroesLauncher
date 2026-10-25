@@ -20,17 +20,17 @@ Check ($settings.Mode -eq 'Fullscreen' -and $settings.Resolution -like '3440*') 
 Check ($settings.Server -eq 'Live') 'Existing players default to Live Server'
 Check $settings.SetupComplete 'Existing player settings suppress first-run pages'
 $settings.Mode='Borderless';$settings.SetupComplete=$true;$settings.Server='Test';Save-PlayerSettings $testRoot $settings
+$settings.Server='Test';Write-JsonAtomic $settings (Get-PlayerSettingsPath $testRoot)
 try {
  Write-JsonAtomic @{Resolution='1280 x 720';Mode='Windowed'} $legacy
  $loaded=Get-PlayerSettings $testRoot
  Check ($loaded.Mode -eq 'Borderless' -and $loaded.SetupComplete -and $loaded.Resolution -like '3440*') 'Per-user choices survive replacement of legacy launcher settings'
- Check ($loaded.Server -eq 'Test') 'Selected server is remembered with player settings'
- $live=Get-ServerProfile Live;$test=Get-ServerProfile Test
- Check ($live.Auth -ne $test.Auth -and $live.Registration -ne $test.Registration -and $live.GamePort -ne $test.GamePort) 'Live and Test use separate login, registration, and game routes'
+ Check ($loaded.Server -eq 'Live') 'Retired server selections migrate to Live without losing settings'
+ $live=Get-ServerProfile Live;$legacy=Get-ServerProfile 'Test'
+ Check ($legacy.SiteConfig -eq $live.SiteConfig -and $legacy.GamePort -eq 4306 -and $legacy.Registration -eq $live.Registration) 'Legacy profile requests resolve only to Live'
  $displayStub=[pscustomobject]@{Width=1920;Height=1080}
- $loaded.Server='Live';$liveArgs=Get-GameLaunchArguments $loaded $displayStub
- $loaded.Server='Test';$testArgs=Get-GameLaunchArguments $loaded $displayStub
- Check ($liveArgs.Contains('-siteconfigurl='+$live.SiteConfig) -and $testArgs.Contains('-siteconfigurl='+$test.SiteConfig)) 'Launching follows the selected server configuration'
+ $loaded.Server='Test';$liveArgs=Get-GameLaunchArguments $loaded $displayStub
+ Check ($liveArgs.Contains('-siteconfigurl='+$live.SiteConfig) -and -not $liveArgs.Contains('SiteConfigTest')) 'Legacy settings cannot launch a retired server'
  Check ((Get-PlayerSettingsPath $testRoot).StartsWith([Environment]::GetFolderPath('LocalApplicationData'))) 'Player settings live outside the launcher update folder'
  $display=Get-GameDisplay $loaded
  Check ($display.Width -eq $display.NativeWidth -and $display.Height -eq $display.NativeHeight) 'Borderless uses detected native resolution'

@@ -3,13 +3,8 @@ MARVEL HEROES OMEGA - BLACK & GOLD LAUNCHER
 Extract into a writable launcher folder. Existing LauncherSettings.json and
 Client files are preserved because this download does not contain them.
 Run Play.bat using PowerShell 7 for Windows.
-Use Live Server / Test Server at the top of the launcher to choose your world.
-Live is the default for existing players. Your selection is remembered.
-Test Server is the separate Tahiti world; create a Test account after selecting
-it. Live accounts and characters are not copied into Test. Test progress may reset.
-Play, account creation, and connection checks all follow the selected server.
-Launcher and client-file updates remain shared; switching servers does not
-replace your client fixes or change your display settings.
+The launcher connects to Live automatically. Existing account, game folder and
+display settings are preserved. Older server selections migrate to Live.
 
 Locate existing game: select the folder containing your Win64 client.
 Choose folder: select a dedicated folder for a future full-game installation.

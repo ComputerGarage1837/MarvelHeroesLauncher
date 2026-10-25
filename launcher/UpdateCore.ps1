@@ -41,7 +41,7 @@ function Get-PlayerSettings([string]$LauncherRoot){
  $existingInstall=(Test-Path -LiteralPath $path) -or (Test-Path -LiteralPath (Join-Path $LauncherRoot 'LauncherSettings.json')) -or (Test-Path -LiteralPath (Join-Path $LauncherRoot '.updates')) -or (Test-Path -LiteralPath (Join-Path $LauncherRoot '.launcher.lock'))
  if(-not(Test-Path -LiteralPath $path)){$path=Join-Path $LauncherRoot 'LauncherSettings.json'}
  if(Test-Path -LiteralPath $path){
-  try{$old=Read-SharedText $path|ConvertFrom-Json -AsHashtable;foreach($key in @('Resolution','Monitor','ClientPath','SetupComplete')){if($old.ContainsKey($key)){$settings[$key]=$old[$key]}};if($old.Mode -in @('Windowed','Fullscreen','Borderless')){$settings.Mode=$old.Mode};if($old.ContainsKey('Server') -and $old.Server -in @('Live','Test')){$settings.Server=$old.Server}}catch{throw 'Your saved settings could not be read. Keep a copy of settings.json before repairing it.'}
+  try{$old=Read-SharedText $path|ConvertFrom-Json -AsHashtable;foreach($key in @('Resolution','Monitor','ClientPath','SetupComplete')){if($old.ContainsKey($key)){$settings[$key]=$old[$key]}};if($old.Mode -in @('Windowed','Fullscreen','Borderless')){$settings.Mode=$old.Mode}}catch{throw 'Your saved settings could not be read. Keep a copy of settings.json before repairing it.'}
  }
  $settings.SetupComplete=[bool]$settings.SetupComplete -or $existingInstall
  return $settings
@@ -54,6 +54,7 @@ function Enter-LauncherInstance([string]$LauncherRoot){
  return [pscustomobject]@{Mutex=$mutex;Acquired=$acquired}
 }
 function Save-PlayerSettings([string]$LauncherRoot,$Settings){
+ $Settings.Server='Live'
  $path=Get-PlayerSettingsPath $LauncherRoot
  [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))|Out-Null
  Write-JsonAtomic $Settings $path
@@ -125,11 +126,9 @@ function Get-LoginFailureMessage([int]$Code){
   default {'The game could not complete login. Run the connection check. If all connections pass, give the server owner the error shown in the game.'}
  }
 }
-function Get-ServerProfile([ValidateSet('Live','Test')][string]$Name='Live'){
- if($Name -eq 'Test'){
-  return [pscustomobject]@{Key='Test';Name='Test Server';SiteConfig='http://myfamilyflix.duckdns.org/SiteConfigTest.xml';Auth='https://myfamilyflix.duckdns.org/TestAuthServer/Login/IndexPB';Registration='https://myfamilyflix.duckdns.org/marvel/test/accounts/create';GameHost='myfamilyflix.duckdns.org';GamePort=14306;Notice='Tahiti test world: separate accounts and progress. Test progress may reset.'}
- }
- return [pscustomobject]@{Key='Live';Name='Live Server';SiteConfig='http://myfamilyflix.duckdns.org/SiteConfig.xml';Auth='https://myfamilyflix.duckdns.org/AuthServer/Login/IndexPB';Registration='https://myfamilyflix.duckdns.org/marvel/accounts/create';GameHost='myfamilyflix.duckdns.org';GamePort=4306;Notice='Live world: your regular accounts and characters.'}
+function Get-ServerProfile([string]$Name='Live'){
+ # Accept a legacy profile argument while always resolving the remaining Live service.
+ return [pscustomobject]@{Key='Live';Name='Live Server';SiteConfig='http://myfamilyflix.duckdns.org/SiteConfig.xml';Auth='https://myfamilyflix.duckdns.org/AuthServer/Login/IndexPB';Registration='https://myfamilyflix.duckdns.org/marvel/accounts/create';GameHost='myfamilyflix.duckdns.org';GamePort=4306;Notice='Your regular accounts and characters.'}
 }
 function Get-GameLaunchArguments($Settings,$Display){
  $profile=Get-ServerProfile $Settings.Server
@@ -137,7 +136,7 @@ function Get-GameLaunchArguments($Settings,$Display){
  if($mode -notin @('Windowed','Fullscreen')){throw 'Invalid display mode.'}
  return "-robocopy -nosteam -siteconfigurl=$($profile.SiteConfig) -ResX=$($Display.Width) -ResY=$($Display.Height) -$mode"
 }
-function Test-MarvelConnection([string]$Server='',[int]$GamePort=0,[ValidateSet('Live','Test')][string]$Profile='Live'){
+function Test-MarvelConnection([string]$Server='',[int]$GamePort=0,[string]$Profile='Live'){
  $selected=Get-ServerProfile $Profile
  $hostName=if($Server){$Server}else{$selected.GameHost};if(-not $GamePort){$GamePort=$selected.GamePort}
  $configUrl=if($Server){"http://$Server/SiteConfig.xml"}else{$selected.SiteConfig}

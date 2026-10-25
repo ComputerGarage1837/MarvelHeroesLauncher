@@ -4,7 +4,7 @@ A Windows launcher for the community server at myfamilyflix.duckdns.org. Include
 
 ## Players
 
-The header selects **Live Server** or **Test Server**. Existing players default to Live; the selection is remembered per Windows user. Launch arguments, secure account creation, and connection diagnostics follow that profile. Test is an independent Tahiti server using a fresh database, without copied Live characters. The launcher validates the selected configuration's authentication path before launching. Both profiles share launcher/client update releases and the player's display settings.
+The launcher connects directly to the Live server. Older saved server selections migrate automatically to Live while preserving game folders, account creation, display choices and client updates.
 
 Download `MarvelHeroesLauncher-Install.zip` from **Releases** and extract it to a writable folder. Existing players can replace launcher files in their current folder: `LauncherSettings.json` and game files are not included or overwritten by the launcher ZIP. Windows and PowerShell 7 are required.
 

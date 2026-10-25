@@ -1,4 +1,4 @@
-param([switch]$ValidateOnly, [string]$PreviewPath,[switch]$ConnectionHelp,[ValidateSet('Live','Test')][string]$Server)
+param([switch]$ValidateOnly, [string]$PreviewPath,[switch]$ConnectionHelp,[string]$Server)
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -6,7 +6,7 @@ Add-Type -AssemblyName System.Net.Http
 [System.Windows.Forms.Application]::EnableVisualStyles()
 . (Join-Path $PSScriptRoot 'UpdateCore.ps1')
 Set-StrictMode -Off
-if(-not $Server){$Server=(Get-PlayerSettings $PSScriptRoot).Server}
+$Server='Live'
 $profile=Get-ServerProfile $Server
 if($ConnectionHelp){
  $help=[Windows.Forms.Form]::new();$help.Text='Server connection and login help';$help.ClientSize=[Drawing.Size]::new(650,570);$help.StartPosition='CenterScreen';$help.FormBorderStyle='FixedDialog';$help.MaximizeBox=$false;$help.BackColor=[Drawing.Color]::Black;$help.ForeColor=[Drawing.Color]::WhiteSmoke;$help.Font=[Drawing.Font]::new('Segoe UI',11)
@@ -48,7 +48,7 @@ function Add-Label($text,$y,$height=25){
 }
 $title=Add-Label 'CREATE YOUR ACCOUNT' 22 34
 $title.Font=[System.Drawing.Font]::new('Segoe UI',18,[System.Drawing.FontStyle]::Bold)
-$accountHint=if($Server -eq 'Test'){'Test Server: creates a separate test account.'}else{'Live Server: your regular account and character world.'}
+$accountHint='Your regular account and character world.'
 $null=Add-Label $accountHint 64
 function Add-Field($label,$y,$secret=$false){
  $null=Add-Label $label $y

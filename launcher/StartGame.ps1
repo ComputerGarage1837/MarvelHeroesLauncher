@@ -1,9 +1,9 @@
-param([switch]$ValidateOnly,[switch]$CheckConnection,[ValidateSet('Live','Test')][string]$Server)
+param([switch]$ValidateOnly,[switch]$CheckConnection,[string]$Server)
 $ErrorActionPreference='Stop'
 try {
 . (Join-Path $PSScriptRoot 'UpdateCore.ps1')
 $settings=Get-PlayerSettings $PSScriptRoot
-if($Server){$settings.Server=$Server}
+$settings.Server='Live'
 if($CheckConnection){Test-MarvelConnection -Profile $settings.Server|ConvertTo-Json -Depth 5 -Compress;exit 0}
 $profile=Get-ServerProfile $settings.Server
 $display=Get-GameDisplay $settings;$width=$display.Width;$height=$display.Height
