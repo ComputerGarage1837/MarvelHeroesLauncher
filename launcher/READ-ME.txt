@@ -2,7 +2,7 @@ MARVEL HEROES OMEGA - BLACK & GOLD LAUNCHER
 
 Extract into a writable launcher folder. Existing LauncherSettings.json and
 Client files are preserved because this download does not contain them.
-Run Play.bat using PowerShell 7 for Windows.
+Open MarvelHeroesLauncher.exe (PowerShell 7 for Windows is required).
 The launcher connects to Live automatically. Existing account, game folder and
 display settings are preserved. Older server selections migrate to Live.
 
@@ -39,3 +39,7 @@ Repository and releases:
 https://github.com/ComputerGarage1837/MarvelHeroesLauncher
 
 No server-address entry is needed. No Tailscale or player GitHub account required.
+Open MarvelHeroesLauncher.exe to play without a command window.
+Existing desktop shortcuts are upgraded when the launcher next opens.
+After an older launcher updates, its next startup creates this executable automatically.
+

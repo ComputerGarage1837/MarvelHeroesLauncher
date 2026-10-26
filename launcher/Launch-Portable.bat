@@ -1,4 +1,8 @@
 @echo off
+if exist "%~dp0MarvelHeroesLauncher.exe" (
+  start "" "%~dp0MarvelHeroesLauncher.exe" %*
+  exit /b
+)
 where pwsh.exe >nul 2>nul
 if errorlevel 1 (
   echo Install PowerShell 7 for Windows, then run this launcher again.

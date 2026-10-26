@@ -6,14 +6,24 @@ Set-StrictMode -Off
 $root=$PSScriptRoot
 $choices=@('Automatic (monitor resolution)','1280 x 720  |  16:9','1920 x 1080  |  16:9','2560 x 1440  |  16:9','3840 x 2160  |  16:9','2560 x 1080  |  Ultrawide 21:9','3440 x 1440  |  Ultrawide 21:9','3840 x 1600  |  Ultrawide 21:9','5120 x 2160  |  Ultrawide 21:9','3840 x 1080  |  Super ultrawide 32:9','5120 x 1440  |  Super ultrawide 32:9','7680 x 2160  |  Super ultrawide 32:9')
 $saved=Get-PlayerSettings $root
+$nativeLauncher=Ensure-NativeLauncher $root
 if($saved.Resolution -notin $choices){$choices+=,[string]$saved.Resolution}
 function Save-Settings {Save-PlayerSettings $root $saved}
 function Open-AccountForm {Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}" -Server {1}' -f (Join-Path $root 'CreateAccount.ps1'),$saved.Server) -WindowStyle Hidden}
 function New-LauncherShortcut {
  $desktop=[Environment]::GetFolderPath('DesktopDirectory');$shell=New-Object -ComObject WScript.Shell
  $link=$shell.CreateShortcut((Join-Path $desktop 'Marvel Heroes Omega.lnk'))
- $link.TargetPath=(Get-Process -Id $PID).Path;$link.Arguments='-NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $root 'Play.ps1');$link.WorkingDirectory=$root;$link.Description='Play Marvel Heroes Omega';$link.Save()
+ $link.TargetPath=$nativeLauncher;$link.Arguments='';$link.WorkingDirectory=$root;$link.Description='Play Marvel Heroes Omega';$link.Save()
  [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($link);[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+}
+if(-not $ValidateOnly){
+ $existingShortcut=Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Marvel Heroes Omega.lnk'
+ if(Test-Path -LiteralPath $existingShortcut){
+  $shell=New-Object -ComObject WScript.Shell;$link=$shell.CreateShortcut($existingShortcut)
+  $refresh=$link.WorkingDirectory -eq $root -and ($link.Arguments.Contains((Join-Path $root 'Play.ps1')) -or $link.TargetPath -eq (Join-Path $root 'Play.bat'))
+  [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($link);[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+  if($refresh){New-LauncherShortcut}
+ }
 }
 function Show-FirstTimeSetup {
  $setup=[Windows.Forms.Form]::new();$setup.Text='Welcome to Marvel Heroes';$setup.ClientSize=[Drawing.Size]::new(610,445);$setup.StartPosition='CenterScreen';$setup.FormBorderStyle='FixedDialog';$setup.MaximizeBox=$false;$setup.BackColor=[Drawing.Color]::Black;$setup.ForeColor=[Drawing.Color]::WhiteSmoke;$setup.Font=[Drawing.Font]::new('Segoe UI',11)

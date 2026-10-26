@@ -1,5 +1,50 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+function Ensure-NativeLauncher([string]$Root){
+ $source=@'
+using System;
+using System.IO;
+using System.Linq;
+using System.Diagnostics;
+using System.Windows.Forms;
+class Bootstrap {
+ static string Quote(string s) {
+  var b=new System.Text.StringBuilder("\"");int slashes=0;
+  foreach(char c in s){if(c=='\\'){slashes++;continue;}if(c=='"'){b.Append('\\',slashes*2+1);b.Append(c);}else{b.Append('\\',slashes);b.Append(c);}slashes=0;}
+  b.Append('\\',slashes*2);b.Append('"');return b.ToString();
+ }
+ [STAThread] static int Main(string[] args) {
+  try {
+   string root=AppDomain.CurrentDomain.BaseDirectory;
+   string[] candidates={Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),@"PowerShell\7\pwsh.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),@".cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe")};
+   string exe=candidates.FirstOrDefault(File.Exists);
+   if(exe==null) foreach(string p in (Environment.GetEnvironmentVariable("PATH")??"").Split(';')) {string f=Path.Combine(p.Trim('"'),"pwsh.exe");if(File.Exists(f)){exe=f;break;}}
+   if(exe==null) throw new Exception("Install PowerShell 7 for Windows, then open the launcher again.");
+   var info=new ProcessStartInfo(exe,"-NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File "+Quote(Path.Combine(root,"Play.ps1"))+" "+string.Join(" ",args.Select(Quote).ToArray()));
+   info.UseShellExecute=false;info.CreateNoWindow=true;info.WindowStyle=ProcessWindowStyle.Hidden;info.WorkingDirectory=root;
+   using(var child=Process.Start(info)){if(args.Contains("-ValidateOnly")){child.WaitForExit();return child.ExitCode;}}
+   return 0;
+  }catch(Exception e){MessageBox.Show(e.Message,"Marvel Heroes Launcher",MessageBoxButtons.OK,MessageBoxIcon.Error);return 1;}
+ }
+}
+'@
+ # Hash both the source and executable so upgrades rebuild once without replacing a running entry point.
+ $sha=[Security.Cryptography.SHA256]::Create();try{$sourceHash=[BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($source))).Replace('-','')}finally{$sha.Dispose()}
+ $destination=Join-Path $Root 'MarvelHeroesLauncher.exe';$marker=Join-Path $Root 'LauncherBootstrap.json'
+ if((Test-Path -LiteralPath $destination) -and (Test-Path -LiteralPath $marker)){
+  try{$saved=Get-Content -LiteralPath $marker -Raw|ConvertFrom-Json;if($saved.sourceHash -eq $sourceHash -and $saved.exeHash -eq (Get-FileHash -LiteralPath $destination).Hash){return $destination}}catch{}
+ }
+ $temp=Join-Path ([IO.Path]::GetTempPath()) ('MarvelLauncher-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Path $temp|Out-Null
+ try{
+  $cs=Join-Path $temp 'Bootstrap.cs';$exe=Join-Path $temp 'MarvelHeroesLauncher.exe';[IO.File]::WriteAllText($cs,$source)
+  $compiler=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+  $result=& $compiler /nologo /target:winexe /platform:anycpu /reference:System.Windows.Forms.dll /reference:System.Core.dll "/out:$exe" $cs 2>&1
+  if($LASTEXITCODE -ne 0){throw ('Could not create the Windows launcher: '+($result -join ' '))}
+  Copy-Item -LiteralPath $exe -Destination $destination -Force
+  @{sourceHash=$sourceHash;exeHash=(Get-FileHash -LiteralPath $destination).Hash}|ConvertTo-Json|Set-Content -LiteralPath $marker
+ }finally{if([IO.Path]::GetFullPath($temp).StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()),[StringComparison]::OrdinalIgnoreCase)){Remove-Item -LiteralPath $temp -Recurse -Force}}
+ return $destination
+}
 function Get-SafePath([string]$Root,[string]$Relative) {
  if([string]::IsNullOrWhiteSpace($Relative) -or $Relative.Contains('\') -or $Relative -match '[:<>"|?*\x00-\x1f]' -or $Relative.StartsWith('/')){throw 'Unsafe update path.'}
  $parts=$Relative.Split('/')

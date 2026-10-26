@@ -4,4 +4,6 @@ launcher/Client/
 launcher/.updates/
 launcher/.launcher.lock
 launcher/*.log
+launcher/MarvelHeroesLauncher.exe
+launcher/LauncherBootstrap.json
 tests/sandbox-*/

@@ -9,6 +9,8 @@ $files=@()
 foreach($name in $names){$dest=Join-Path $stage $name;New-Item -ItemType Directory ([IO.Path]::GetDirectoryName($dest)) -Force|Out-Null;Copy-Item (Join-Path $source $name) $dest;$item=Get-Item $dest;$files+=@{path=$name;size=$item.Length;sha256=(Get-FileHash $item.FullName).Hash.ToLowerInvariant()}}
 $asset="launcher-$Version.zip";$archive=Join-Path $out $asset
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -Force
+. (Join-Path $source 'UpdateCore.ps1')
+[void](Ensure-NativeLauncher $stage)
 $packages=@()
 if(Test-Path (Join-Path $out 'previous-manifest.json')){
  $previous=Get-Content (Join-Path $out 'previous-manifest.json') -Raw|ConvertFrom-Json

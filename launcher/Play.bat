@@ -1,4 +1,8 @@
 @echo off
+if exist "%~dp0MarvelHeroesLauncher.exe" (
+  start "" "%~dp0MarvelHeroesLauncher.exe" %*
+  exit /b
+)
 where pwsh.exe >nul 2>nul
 if not errorlevel 1 (
   pwsh.exe -NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File "%~dp0Play.ps1" %*
