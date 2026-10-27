@@ -19,10 +19,10 @@ function Invoke-RestMethod {
  if($Uri -like 'https://api.github.com/*'){return @{name='test';assets=@(@{name='update-manifest.json';browser_download_url='https://github.com/Test/Test/releases/download/test/update-manifest.json'},@{name='client.zip';browser_download_url='https://github.com/Test/Test/releases/download/test/client.zip'},@{name='patch.zip';browser_download_url='https://github.com/Test/Test/releases/download/test/patch.zip'})}}
  return Get-Content -LiteralPath $env:MH_TEST_MANIFEST -Raw | ConvertFrom-Json
 }
-& (Join-Path $env:MH_TEST_LAUNCHER 'Update.ps1') -TargetRoot $env:MH_TEST_LAUNCHER -Action Repair
+& (Join-Path $env:MH_TEST_LAUNCHER 'Update.ps1') -TargetRoot $env:MH_TEST_LAUNCHER -Action $env:MH_TEST_ACTION
 '@
 $runnerPath=Join-Path $sandbox 'runner.ps1';Set-Content $runnerPath $runner
-$env:MH_TEST_ARCHIVE=$archive;$env:MH_TEST_MANIFEST=Join-Path $sandbox 'manifest.json';$env:MH_TEST_LAUNCHER=$launcher
+$env:MH_TEST_ARCHIVE=$archive;$env:MH_TEST_MANIFEST=Join-Path $sandbox 'manifest.json';$env:MH_TEST_LAUNCHER=$launcher;$env:MH_TEST_ACTION='Repair'
 & (Get-Process -Id $PID).Path -NoProfile -File $runnerPath
 if($LASTEXITCODE -ne 0){throw 'Repair failed.'}
 if([IO.File]::ReadAllText((Join-Path $game 'Data/test.bin')) -ne 'correct'){throw 'Changed file was not repaired.'}
@@ -49,6 +49,10 @@ Add-Content (Join-Path $launcher 'Transfer.ps1') "`nfunction Receive-Asset([stri
 if($LASTEXITCODE -ne 0 -or [IO.File]::ReadAllText((Join-Path $game 'Data/test.bin')) -ne 'updated'){throw 'Repair failed to apply the latest client patch.'}
 if((Get-Content (Join-Path $game '.mh-client-version.json') -Raw|ConvertFrom-Json).version -ne '1.0.1'){throw 'Repair did not record the patched version.'}
 Write-Output 'Repair restores the latest patched version.'
+[IO.File]::WriteAllText((Join-Path $game 'Data/test.bin'),'correct');Set-Content (Join-Path $game '.mh-client-version.json') '{"version":"1.0.0"}'
+$env:MH_TEST_ACTION='Update';& (Get-Process -Id $PID).Path -NoProfile -File $runnerPath;$env:MH_TEST_ACTION='Repair'
+if($LASTEXITCODE -ne 0 -or [IO.File]::ReadAllText((Join-Path $game 'Data/test.bin')) -ne 'updated'){throw 'Incremental update failed to apply the client patch.'}
+Write-Output 'A client at 1.0 receives the incremental 1.0.1 patch.'
 $exe='UnrealEngine3/Binaries/Win64/MarvelHeroesOmega.exe';[IO.File]::WriteAllText((Join-Path $game $exe),'custom binary')
 @{paths=@($exe)}|ConvertTo-Json|Set-Content (Join-Path $game '.mh-protected-files.json')
 & (Get-Process -Id $PID).Path -NoProfile -File $runnerPath
