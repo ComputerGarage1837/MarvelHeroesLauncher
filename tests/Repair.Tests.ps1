@@ -53,6 +53,15 @@ Write-Output 'Repair restores the latest patched version.'
 $env:MH_TEST_ACTION='Update';& (Get-Process -Id $PID).Path -NoProfile -File $runnerPath;$env:MH_TEST_ACTION='Repair'
 if($LASTEXITCODE -ne 0 -or [IO.File]::ReadAllText((Join-Path $game 'Data/test.bin')) -ne 'updated'){throw 'Incremental update failed to apply the client patch.'}
 Write-Output 'A client at 1.0 receives the incremental 1.0.1 patch.'
+Set-Content (Join-Path $game '.mh-client-version.json') '{"version":"1.52.0.1701"}'
+$env:MH_TEST_ACTION='Check';& (Get-Process -Id $PID).Path -NoProfile -File $runnerPath;$env:MH_TEST_ACTION='Repair'
+if($LASTEXITCODE -ne 0 -or (Get-Content (Join-Path $game '.mh-client-version.json') -Raw|ConvertFrom-Json).version -ne '1.0.1'){throw 'Matching older version marker was not safely adopted.'}
+Write-Output 'A matching existing client is automatically adopted into the new version chain.'
+Set-Content (Join-Path $game '.mh-client-version.json') '{"version":"1.52.0.1701"}';[IO.File]::WriteAllText((Join-Path $game 'Data/test.bin'),'custom content')
+$env:MH_TEST_ACTION='Check';$checkResult=(& (Get-Process -Id $PID).Path -NoProfile -File $runnerPath | ConvertFrom-Json);$env:MH_TEST_ACTION='Repair'
+if($LASTEXITCODE -ne 0 -or -not $checkResult.needsBaseline -or (Get-Content (Join-Path $game '.mh-client-version.json') -Raw|ConvertFrom-Json).version -ne '1.52.0.1701'){throw 'Mismatched existing client was adopted without verification.'}
+[IO.File]::WriteAllText((Join-Path $game 'Data/test.bin'),'updated')
+Write-Output 'A mismatched existing client is left unchanged and offered repair.'
 $exe='UnrealEngine3/Binaries/Win64/MarvelHeroesOmega.exe';[IO.File]::WriteAllText((Join-Path $game $exe),'custom binary')
 @{paths=@($exe)}|ConvertTo-Json|Set-Content (Join-Path $game '.mh-protected-files.json')
 & (Get-Process -Id $PID).Path -NoProfile -File $runnerPath

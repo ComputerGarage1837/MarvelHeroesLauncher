@@ -62,6 +62,28 @@ try {
  $state=Get-Content (Join-Path $root 'InstalledVersions.json') -Raw|ConvertFrom-Json
  $pending=@();$planned=@{launcher=[string]$state.launcher;client=[string]$gameState.version}
  $full=@($manifest.packages|Where-Object component -eq 'client-full')
+ $needsBaseline=$false
+ # Older launcher versions used a separate version scheme. Adopt the new
+ # scheme only after the installed files match the complete current release.
+ if($Action -eq 'Check' -and $gameInstalled -and $full.Count -eq 1){
+  $currentRelease=[version]$full[0].version;$baselineFiles=@{}
+  foreach($file in $full[0].files){$baselineFiles[$file.path]=$file}
+  foreach($patch in @($manifest.packages|Where-Object component -eq 'client')){
+   if([version]$patch.fromVersion -ne $currentRelease){throw 'Client patch chain is invalid.'}
+   foreach($file in $patch.files){$baselineFiles[$file.path]=$file};$currentRelease=[version]$patch.version
+  }
+  if([version]$gameState.version -gt $currentRelease){
+   $needsBaseline=$false;$checked=0
+   foreach($file in $baselineFiles.Values){
+    if($file.path -notlike 'Client/*'){throw 'Invalid client baseline path.'}
+    $relative=$file.path.Substring(7);$target=Get-SafePath $gamePath $relative
+    if(Test-ProtectedClientFile $gamePath $relative -AllowExecutableRepair){continue}
+    if(-not(Test-Path -LiteralPath $target -PathType Leaf) -or (Get-Item -LiteralPath $target).Length -ne [long]$file.size -or (Get-FileHash -LiteralPath $target).Hash -ne $file.sha256){$needsBaseline=$true;break}
+    $checked++;if($checked % 100 -eq 0){Set-TransferStatus "Checking existing game ($checked/$($baselineFiles.Count))" $checked $baselineFiles.Count}
+   }
+   if(-not $needsBaseline){$gameState.version=[string]$currentRelease;$planned.client=[string]$currentRelease;Write-JsonAtomic $gameState $gameStatePath}
+  }
+ }
  if($Action -in @('InstallGame','Repair')){
   if($Action -eq 'InstallGame' -and $gameInstalled){throw 'A game installation already exists in this folder. Use Check for Updates.'}
   if($Action -eq 'Repair' -and -not (Test-Path -LiteralPath $gamePath -PathType Container)){throw 'Choose an existing game folder before repairing.'}
@@ -77,7 +99,7 @@ try {
   if($package.component -eq 'client' -and [version]$package.fromVersion -ne $current){throw 'Client patch baseline does not match this installation.'}
   $planned[$package.component]=[string]$package.version;$pending+=,$package
  }
- if($Action -eq 'Check'){@{available=($pending.Count -gt 0);fullAvailable=($full.Count -eq 1);gameInstalled=$gameInstalled;summary=(($pending|ForEach-Object {"$($_.component) $($_.version)"}) -join ', ');release=[string]$release.name}|ConvertTo-Json -Compress;exit 0}
+ if($Action -eq 'Check'){@{available=($pending.Count -gt 0);fullAvailable=($full.Count -eq 1);gameInstalled=$gameInstalled;needsBaseline=$needsBaseline;summary=(($pending|ForEach-Object {"$($_.component) $($_.version)"}) -join ', ');release=[string]$release.name}|ConvertTo-Json -Compress;exit 0}
  if($Action -eq 'Repair'){
   $expected=@{};foreach($package in $pending){if($package.component -in @('client-full','client')){foreach($file in $package.files){$expected[$file.path]=$file}}}
   $mismatch=0;$checked=0
