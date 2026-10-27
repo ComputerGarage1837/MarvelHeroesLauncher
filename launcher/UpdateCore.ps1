@@ -219,6 +219,34 @@ function Test-MarvelConnection([string]$Server='',[int]$GamePort=0,[string]$Prof
  try{$task=$tcp.ConnectAsync($hostName,$GamePort);if(-not $task.Wait(6000) -or -not $tcp.Connected){throw 'Timeout'};$checks+=,[pscustomobject]@{Name='Game connection';Ok=$true;Message='Reachable'}}catch{$checks+=,[pscustomobject]@{Name='Game connection';Ok=$false;Message='Game port is unreachable. Check firewall access or ask the server owner to check the game service and port forwarding.'}}finally{$tcp.Dispose()}
  return [pscustomobject]@{Server=$Profile;ServerName=$selected.Name;Reachable=(@($checks|Where-Object {-not $_.Ok}).Count -eq 0);CheckedAt=[DateTime]::Now.ToString('HH:mm:ss');Checks=$checks}
 }
+function Install-CameraControls([string]$GameRoot,[string]$DocumentsRoot=''){
+ $dll=Join-Path $GameRoot 'UnrealEngine3/Binaries/Win64/winmm.dll'
+ if(-not (Test-Path -LiteralPath $dll) -or (Get-FileHash -LiteralPath $dll).Hash -ine '5698BF1BFFCF7BA4EBA8A49083B8CC4BD0A5ABDDEC965537CDC642AAC3CDA5B0'){return}
+ $docs=if($DocumentsRoot){$DocumentsRoot}else{[Environment]::GetFolderPath('MyDocuments')}
+ $files=@((Join-Path $GameRoot 'UnrealEngine3/MarvelGame/Config/DefaultInput.ini'),(Join-Path $docs 'My Games/Marvel Heroes/MarvelGame/Config/MarvelInput.ini'),(Join-Path $docs 'My Games/Marvel Heroes/MarvelGame/Config/MarvelInputUserSettings.ini'))
+ foreach($path in $files){
+  if(-not (Test-Path -LiteralPath $path)){continue}
+  $reader=[IO.StreamReader]::new($path,$true);try{$text=$reader.ReadToEnd();$encoding=$reader.CurrentEncoding}finally{$reader.Dispose()}
+  $pattern='(?ms)(^\[MarvelGame\.MarvelInput\][^\r\n]*\r?\n)(.*?)(?=^\[|\z)';$match=[regex]::Match($text,$pattern)
+  if(-not $match.Success){continue}
+  $section=$match.Groups[2].Value;$original=$section
+  $section=[regex]::Replace($section,'(?m)^(?!\s*;)([^\r\n]*Name="XboxTypeS_RightShoulder"[^\r\n]*Command=")TargetLockOnToggle("[^\r\n]*)(?=\r?$)','$1TargetLockOnToggle | VFXToggleOtherPlayerPowerEffects | OnRelease VFXTogglePowerDecals$2')
+  if($section -notmatch '(?im)^\s*[.+]?Bindings=\(Name="MiddleMouseButton"'){
+   $prefix=if($section -match '(?m)^\.Bindings=') {'.Bindings='} else {'Bindings='}
+   $nl=if($text.Contains("`r`n")){"`r`n"}else{"`n"}
+   $lines=@('Name="KBM_CamX", Command="Axis GamepadRawJoyLookRight Speed=0.1667"','Name="KBM_CamY", Command="Axis GamepadRawJoyLookUp Speed=-0.1667"','Name="KBM_None", Command=""','Name="KBM_MMB", Command="SetBind MouseX KBM_CamX | SetBind MouseY KBM_CamY | OnRelease SetBind MouseX KBM_None | OnRelease SetBind MouseY KBM_None"','Name="MiddleMouseButton", Command="KBM_MMB"')
+   if($section.Length -and -not $section.EndsWith("`n")){$section+=$nl}
+   foreach($line in $lines){$name=([regex]::Match($line,'Name="([^"]+)"')).Groups[1].Value;if($section -notmatch ('(?im)^\s*[.+]?Bindings=\(Name="'+[regex]::Escape($name)+'"')){$section+=$prefix+'('+$line+')'+$nl}}
+  }
+  $updated=$text.Substring(0,$match.Groups[2].Index)+$section+$text.Substring($match.Groups[2].Index+$match.Groups[2].Length)
+  $updated=[regex]::Replace($updated,'(?m)^(?!\s*;)([^\r\n]*Name="XboxTypeS_RightShoulder"[^\r\n]*Command=")TargetLockOnToggle("[^\r\n]*)(?=\r?$)','$1TargetLockOnToggle | VFXToggleOtherPlayerPowerEffects | OnRelease VFXTogglePowerDecals$2')
+  if($updated -ceq $text){continue}
+  $backup=Join-Path $GameRoot '.mh-camera-control-backups';[IO.Directory]::CreateDirectory($backup)|Out-Null
+  $name=([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($path)))).Substring(0,16)+'.ini';$saved=Join-Path $backup $name
+  if(-not (Test-Path -LiteralPath $saved)){[IO.File]::Copy($path,$saved,$false)}
+  [IO.File]::WriteAllText($path,$updated,$encoding)
+ }
+}
 function Test-ProtectedClientFile([string]$Root,[string]$Relative,[switch]$AllowExecutableRepair){
  $path=Get-SafePath $Root $Relative
  if(-not(Test-Path -LiteralPath $path)){return $false}

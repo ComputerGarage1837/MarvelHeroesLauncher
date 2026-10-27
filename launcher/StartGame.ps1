@@ -21,6 +21,7 @@ $guard=$null
 try{
  $lockPath=Join-Path $folder '.mh-updates/update.lock'
  if(Test-Path -LiteralPath $lockPath){$guard=[IO.File]::Open($lockPath,'Open','Read','None')}
+ Install-CameraControls $folder
  Write-Output 'Starting Marvel Heroes Omega...'
  $game=Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.DirectoryName -ArgumentList $clientArgs -PassThru
  for($i=0;$i -lt 240;$i++){
