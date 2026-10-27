@@ -21,6 +21,7 @@ jobs:
           ./tests/Repair.Tests.ps1
           ./tests/PlayerExperience.Tests.ps1
           ./tests/NativeLauncher.Tests.ps1
+          ./tests/CameraControls.Tests.ps1
           pwsh -NoProfile -STA -File ./launcher/Play.ps1 -ValidateOnly
           if ($LASTEXITCODE -ne 0) { throw 'Launcher validation failed' }
       - name: Prepare release

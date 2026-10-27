@@ -39,6 +39,13 @@ Repository and releases:
 https://github.com/ComputerGarage1837/MarvelHeroesLauncher
 
 No server-address entry is needed. No Tailscale or player GitHub account required.
+Camera mod: hold middle mouse and move the mouse to rotate; release to stop.
+The launcher repairs the camera bindings in both default and saved input arrays.
+Combat keys and login text-input mappings are preserved. The earlier F7 camera
+experiment is removed. Custom middle-mouse or mouse-axis bindings are left alone.
+Controller: right stick orbits, RB + right stick adjusts height. Mouse camera
+requires controllers to be disconnected, as documented by the mod author.
+Runtime camera movement still needs testing on the gaming PC after this repair.
 Open MarvelHeroesLauncher.exe to play without a command window.
 Existing desktop shortcuts are upgraded when the launcher next opens.
 After an older launcher updates, its next startup creates this executable automatically.

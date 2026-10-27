@@ -219,41 +219,110 @@ function Test-MarvelConnection([string]$Server='',[int]$GamePort=0,[string]$Prof
  try{$task=$tcp.ConnectAsync($hostName,$GamePort);if(-not $task.Wait(6000) -or -not $tcp.Connected){throw 'Timeout'};$checks+=,[pscustomobject]@{Name='Game connection';Ok=$true;Message='Reachable'}}catch{$checks+=,[pscustomobject]@{Name='Game connection';Ok=$false;Message='Game port is unreachable. Check firewall access or ask the server owner to check the game service and port forwarding.'}}finally{$tcp.Dispose()}
  return [pscustomobject]@{Server=$Profile;ServerName=$selected.Name;Reachable=(@($checks|Where-Object {-not $_.Ok}).Count -eq 0);CheckedAt=[DateTime]::Now.ToString('HH:mm:ss');Checks=$checks}
 }
+function Get-CameraInputEntries([string]$Text){
+ $section='';$index=0
+ foreach($line in [regex]::Split($Text,'(?<=\n)')){
+  if($line -match '^\s*\[([^]]+)\]'){$section=$Matches[1]}
+  elseif($line -match '^\s*([.!+\-]?)(Bindings|ControllerBindings)\s*=\s*\(([^\r\n]*)\)\s*$'){
+   $prefix=$Matches[1];$kind=$Matches[2];$body=$Matches[3]
+   $name=[regex]::Match($body,'(?i)(?:^|,)\s*Name\s*=\s*"([^"]+)"')
+   $command=[regex]::Match($body,'(?i)(?:^|,)\s*Command\s*=\s*(?:"([^"]*)"|([^,)]*))')
+   if($name.Success -and $command.Success){
+    [pscustomobject]@{Section=$section;Prefix=$prefix;Kind=$kind;Name=$name.Groups[1].Value;Command=$(if($command.Groups[1].Success){$command.Groups[1].Value}else{$command.Groups[2].Value.Trim()});Plain=($body -notmatch '(?i)(?:^|,)\s*(?:Control|Shift|Alt)\s*=\s*True');Index=$index;Raw=$line}
+   }
+  }
+  $index++
+ }
+}
+function Get-CameraControlConflict($Entries){
+ foreach($entry in $Entries){
+  if($entry.Section -ine 'MarvelGame.MarvelInput' -or $entry.Kind -ine 'Bindings' -or -not $entry.Plain){continue}
+  if($entry.Name -ieq 'MiddleMouseButton' -and $entry.Command -notmatch '^KBM_MMB[AB]?$'){return 'Middle mouse already has a custom command. Camera controls were left unchanged.'}
+  if($entry.Name -match '^Mouse[XY]$' -and $entry.Command -notmatch '^KBM_(?:Cam[XY][ABC]?|None)$' -and $entry.Command){return 'Custom mouse-axis controls were found. Camera controls were left unchanged to preserve them.'}
+ }
+ return ''
+}
+function Update-CameraInputText([string]$Text){
+ $entries=@(Get-CameraInputEntries $Text);$conflict=Get-CameraControlConflict $entries
+ if($conflict){return [pscustomobject]@{Text=$Text;Conflict=$conflict}}
+ $lines=[regex]::Split($Text,'(?<=\n)');$newline=if($Text.Contains("`r`n")){"`r`n"}else{"`n"}
+ $commands=[ordered]@{
+  KBM_CamX='Axis GamepadRawJoyLookRight Speed=0.1667'
+  KBM_CamY='Axis GamepadRawJoyLookUp Speed=-0.1667'
+  KBM_None=''
+  KBM_MMB='SetBind MouseX KBM_CamX | SetBind MouseY KBM_CamY | OnRelease SetBind MouseX KBM_None | OnRelease SetBind MouseY KBM_None'
+  MiddleMouseButton='KBM_MMB'
+ }
+ $last=@{};$drop=[Collections.Generic.HashSet[int]]::new();$replacements=@{}
+ foreach($entry in $entries){
+  if($entry.Section -ieq 'MarvelGame.MarvelInput' -and $entry.Kind -ieq 'Bindings'){
+   # Each existing array representation needs its own aliases, including both sides of the saved user-settings diff.
+   # A single prefix selected for the whole section leaves generated Bindings and +Bindings without the camera commands.
+   if($entry.Prefix -in @('','.','+','!')){$last[$entry.Prefix]=$entry.Index}
+   if($entry.Plain){
+    $managed=$commands.Contains($entry.Name)
+    $oldToggle=($entry.Name -in @('KBM_ToggleOn','KBM_ToggleOff')) -or ($entry.Name -ieq 'F7' -and $entry.Command -match '^KBM_Toggle(?:On|Off)$')
+    $savedAxis=$entry.Name -match '^Mouse[XY]$' -and $entry.Command -match '^KBM_(?:Cam[XY][ABC]?|None)$'
+    if($managed -or $oldToggle -or $savedAxis){[void]$drop.Add($entry.Index)}
+   }
+  }
+  if($entry.Section -in @('MarvelGame.MarvelInput','KeyBindings_Classic','KeyBindings_Concar') -and $entry.Name -ieq 'XboxTypeS_RightShoulder' -and $entry.Plain -and $entry.Command -ceq 'TargetLockOnToggle'){
+   $replacements[$entry.Index]=[regex]::Replace($entry.Raw,'(?i)(Command\s*=\s*")TargetLockOnToggle(")','$1TargetLockOnToggle | VFXToggleOtherPlayerPowerEffects | OnRelease VFXTogglePowerDecals$2')
+  }
+ }
+ $output=[Text.StringBuilder]::new()
+ for($i=0;$i -lt $lines.Length;$i++){
+  if($replacements.ContainsKey($i)){[void]$output.Append($replacements[$i])}
+  elseif(-not $drop.Contains($i)){[void]$output.Append($lines[$i])}
+  foreach($prefix in @('','.','!','+')){
+   if(-not $last.ContainsKey($prefix) -or $last[$prefix] -ne $i){continue}
+   if($output.Length -and $output[$output.Length-1] -ne "`n"){[void]$output.Append($newline)}
+   foreach($name in $commands.Keys){
+    $flags=if($prefix -eq '.') {''} else {',Control=False,Shift=False,Alt=False,bIgnoreCtrl=False,bIgnoreShift=False,bIgnoreAlt=False'}
+    [void]$output.Append($prefix+'Bindings=(Name="'+$name+'",Command="'+$commands[$name]+'"'+$flags+')'+$newline)
+   }
+  }
+ }
+ return [pscustomobject]@{Text=$output.ToString();Conflict=''}
+}
+function Set-CameraInputFiles([string]$GameRoot,[string[]]$Files){
+ $plans=@();$all=@()
+ foreach($path in $Files){
+  if(-not (Test-Path -LiteralPath $path)){continue}
+  $reader=[IO.StreamReader]::new($path,$true);try{$text=$reader.ReadToEnd();$encoding=$reader.CurrentEncoding}finally{$reader.Dispose()}
+  if($encoding.CodePage -eq 65001){$bytes=[IO.File]::ReadAllBytes($path);$bom=$bytes.Length -ge 3 -and $bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191;$encoding=[Text.UTF8Encoding]::new($bom)}
+  $all+=@(Get-CameraInputEntries $text)
+  $updated=Update-CameraInputText $text
+  if($updated.Text -cne $text){$plans+=,[pscustomobject]@{Path=$path;Original=$text;Updated=$updated.Text;Encoding=$encoding;Backup='';Temp=''}}
+ }
+ $conflict=Get-CameraControlConflict $all
+ if($conflict){return [pscustomobject]@{Status='CustomControls';Message=$conflict;ChangedFiles=0}}
+ $backupDirectory=Join-Path $GameRoot '.mh-camera-control-backups';$committed=@()
+ try{
+  foreach($plan in $plans){
+   if((Get-Item -LiteralPath $plan.Path).IsReadOnly){throw 'An input file is read-only. No controls were changed.'}
+   [IO.Directory]::CreateDirectory($backupDirectory)|Out-Null
+   $key=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($plan.Path))).Substring(0,16)
+   $hash=(Get-FileHash -LiteralPath $plan.Path).Hash.Substring(0,16)
+   $plan.Backup=Join-Path $backupDirectory ('hold-v2-'+$key+'-'+$hash+'.ini')
+   if(-not (Test-Path -LiteralPath $plan.Backup)){[IO.File]::Copy($plan.Path,$plan.Backup,$false)}
+   $plan.Temp=$plan.Path+'.camera-'+[Guid]::NewGuid().ToString('N')+'.tmp'
+   [IO.File]::WriteAllText($plan.Temp,$plan.Updated,$plan.Encoding)
+  }
+  foreach($plan in $plans){
+   # A running game or external editor must not overwrite a concurrently changed profile.
+   if([IO.File]::ReadAllText($plan.Path) -cne $plan.Original){throw 'An input file changed while preparing camera controls. Try again after closing the game.'}
+   [IO.File]::Move($plan.Temp,$plan.Path,$true);$committed+=,$plan
+  }
+ }catch{foreach($plan in $committed){[IO.File]::Copy($plan.Backup,$plan.Path,$true)};throw}finally{foreach($plan in $plans){if($plan.Temp -and (Test-Path -LiteralPath $plan.Temp)){[IO.File]::Delete($plan.Temp)}}}
+ return [pscustomobject]@{Status='Configured';Message='Camera controls: hold middle mouse to rotate; release to stop. Combat key bindings are preserved.';ChangedFiles=$plans.Count}
+}
 function Install-CameraControls([string]$GameRoot,[string]$DocumentsRoot=''){
  $dll=Join-Path $GameRoot 'UnrealEngine3/Binaries/Win64/winmm.dll'
  if(-not (Test-Path -LiteralPath $dll) -or (Get-FileHash -LiteralPath $dll).Hash -ine '5698BF1BFFCF7BA4EBA8A49083B8CC4BD0A5ABDDEC965537CDC642AAC3CDA5B0'){return}
  $docs=if($DocumentsRoot){$DocumentsRoot}else{[Environment]::GetFolderPath('MyDocuments')}
  $files=@((Join-Path $GameRoot 'UnrealEngine3/MarvelGame/Config/DefaultInput.ini'),(Join-Path $docs 'My Games/Marvel Heroes/MarvelGame/Config/MarvelInput.ini'),(Join-Path $docs 'My Games/Marvel Heroes/MarvelGame/Config/MarvelInputUserSettings.ini'))
- foreach($path in $files){
-  if(-not (Test-Path -LiteralPath $path)){continue}
-  $reader=[IO.StreamReader]::new($path,$true);try{$text=$reader.ReadToEnd();$encoding=$reader.CurrentEncoding}finally{$reader.Dispose()}
-  $pattern='(?ms)(^\[MarvelGame\.MarvelInput\][^\r\n]*\r?\n)(.*?)(?=^\[|\z)';$match=[regex]::Match($text,$pattern)
-  if(-not $match.Success){continue}
-  $section=$match.Groups[2].Value;$original=$section
-  $section=[regex]::Replace($section,'(?m)^(?!\s*;)([^\r\n]*Name="XboxTypeS_RightShoulder"[^\r\n]*Command=")TargetLockOnToggle("[^\r\n]*)(?=\r?$)','$1TargetLockOnToggle | VFXToggleOtherPlayerPowerEffects | OnRelease VFXTogglePowerDecals$2')
-  if($section -notmatch '(?im)^\s*[.+]?Bindings=\(Name="MiddleMouseButton"'){
-   $prefix=if($section -match '(?m)^\.Bindings=') {'.Bindings='} else {'Bindings='}
-   $nl=if($text.Contains("`r`n")){"`r`n"}else{"`n"}
-   $lines=@('Name="KBM_CamX", Command="Axis GamepadRawJoyLookRight Speed=0.1667"','Name="KBM_CamY", Command="Axis GamepadRawJoyLookUp Speed=-0.1667"','Name="KBM_None", Command=""','Name="KBM_MMB", Command="SetBind MouseX KBM_CamX | SetBind MouseY KBM_CamY | OnRelease SetBind MouseX KBM_None | OnRelease SetBind MouseY KBM_None"','Name="MiddleMouseButton", Command="KBM_MMB"')
-   if($section.Length -and -not $section.EndsWith("`n")){$section+=$nl}
-   foreach($line in $lines){$name=([regex]::Match($line,'Name="([^"]+)"')).Groups[1].Value;if($section -notmatch ('(?im)^\s*[.+]?Bindings=\(Name="'+[regex]::Escape($name)+'"')){$section+=$prefix+'('+$line+')'+$nl}}
-  }
-  # An independent toggle provides the mod's mouse-camera mode without changing movement or ability keys.
-  if($section -notmatch '(?im)^\s*[.!+]?Bindings=\(Name="F7"'){
-   $prefix=if($section -match '(?m)^\.Bindings=') {'.Bindings='} else {'Bindings='}
-   $nl=if($text.Contains("`r`n")){"`r`n"}else{"`n"}
-   if($section.Length -and -not $section.EndsWith("`n")){$section+=$nl}
-   $lines=@('Name="KBM_CamX", Command="Axis GamepadRawJoyLookRight Speed=0.1667"','Name="KBM_CamY", Command="Axis GamepadRawJoyLookUp Speed=-0.1667"','Name="KBM_None", Command=""','Name="KBM_ToggleOn", Command="SetBind MouseX KBM_CamX | SetBind MouseY KBM_CamY | SetBind F7 KBM_ToggleOff"','Name="KBM_ToggleOff", Command="SetBind MouseX KBM_None | SetBind MouseY KBM_None | SetBind F7 KBM_ToggleOn"','Name="F7", Command="KBM_ToggleOn"')
-   foreach($line in $lines){$name=([regex]::Match($line,'Name="([^"]+)"')).Groups[1].Value;if($section -notmatch ('(?im)^\s*[.!+]?Bindings=\(Name="'+[regex]::Escape($name)+'"')){$section+=$prefix+'('+$line+')'+$nl}}
-  }
-  $updated=$text.Substring(0,$match.Groups[2].Index)+$section+$text.Substring($match.Groups[2].Index+$match.Groups[2].Length)
-  $updated=[regex]::Replace($updated,'(?m)^(?!\s*;)([^\r\n]*Name="XboxTypeS_RightShoulder"[^\r\n]*Command=")TargetLockOnToggle("[^\r\n]*)(?=\r?$)','$1TargetLockOnToggle | VFXToggleOtherPlayerPowerEffects | OnRelease VFXTogglePowerDecals$2')
-  if($updated -ceq $text){continue}
-  $backup=Join-Path $GameRoot '.mh-camera-control-backups';[IO.Directory]::CreateDirectory($backup)|Out-Null
-  $name=([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($path)))).Substring(0,16)+'.ini';$saved=Join-Path $backup $name
-  if(-not (Test-Path -LiteralPath $saved)){[IO.File]::Copy($path,$saved,$false)}
-  [IO.File]::WriteAllText($path,$updated,$encoding)
- }
+ Set-CameraInputFiles $GameRoot $files
 }
 function Test-ProtectedClientFile([string]$Root,[string]$Relative,[switch]$AllowExecutableRepair){
  $path=Get-SafePath $Root $Relative

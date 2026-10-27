@@ -1,4 +1,4 @@
-param([string]$GameRoot,[string]$DocumentsRoot)
+param([string]$GameRoot,[string]$DocumentsRoot,[switch]$ObserveInput)
 $ErrorActionPreference='Stop'
 Write-Host 'Marvel Heroes camera diagnostic'
 $game=Get-Process MarvelHeroesOmega -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -48,14 +48,42 @@ foreach($inputFile in $inputs){
   }
   foreach($line in $sections[$section]){
    if($line -match 'Name\s*=\s*"(MiddleMouseButton|MouseX|MouseY|F7|KBM_[^"]+|BackSpace|Backspace|XboxTypeS_RightShoulder)"'){Write-Host ('  '+$line)}
-   elseif($line -match '^[!\-]Bindings\s*='){Write-Host ('  ARRAY DIRECTIVE: '+$line)}
+   elseif($line -match '^!Bindings\s*=\s*ClearArray'){Write-Host ('  ARRAY DIRECTIVE: '+$line)}
   }
  }
  $text=Get-Content -LiteralPath $inputFile.path -Raw
+ $ui=[regex]::Match($text,'(?ms)^\[Engine\.UIInputConfiguration\][^\r\n]*\r?\n(.*?)(?=^\[|\z)').Groups[1].Value
+ $backspace=[regex]::Matches($ui,'(?i)InputAliasName="BackSpace",LinkedInputKeys=\(\(InputKeyName="BackSpace"').Count
+ Write-Host ("$($inputFile.name) login UI: BackSpace alias mappings=$backspace (stock default has 2; this does not prove UI execution)")
  foreach($sectionMatch in [regex]::Matches($text,'(?ms)^\s*\[(Scaleform\.KeyMap|Scaleform\.GamepadMouse)\][^\r\n]*\r?\n(.*?)(?=^\[|\z)')){
   Write-Host ("$($inputFile.name) [$($sectionMatch.Groups[1].Value)]")
   foreach($line in $sectionMatch.Groups[2].Value -split '\r?\n'){if($line -match '(?i)back|mouse|gamepad|^[XY]\s*='){Write-Host ('  '+$line.Trim())}}
  }
+}
+if($ObserveInput -and $game){
+ if(-not ('MHCameraInputObservation' -as [type])){Add-Type -TypeDefinition @'
+using System;using System.Runtime.InteropServices;
+public static class MHCameraInputObservation {
+ [DllImport("user32.dll")]public static extern short GetAsyncKeyState(int key);
+ [DllImport("user32.dll")]public static extern IntPtr GetForegroundWindow();
+ [DllImport("user32.dll")]public static extern uint GetWindowThreadProcessId(IntPtr window,out uint pid);
+ [StructLayout(LayoutKind.Sequential)]public struct Point{public int X;public int Y;}
+ [DllImport("user32.dll")]public static extern bool GetCursorPos(out Point point);
+ public static bool InGame(uint gamePid){uint pid;GetWindowThreadProcessId(GetForegroundWindow(),out pid);return pid==gamePid;}
+ public static bool CursorMoved(ref Point old){Point p;GetCursorPos(out p);bool moved=p.X!=old.X||p.Y!=old.Y;old=p;return moved;}
+}
+'@}
+ Write-Host 'For 20 seconds: switch to the game, hold middle mouse and move it, then try Backspace in the login field. Only button states are counted; no text is recorded.'
+ $point=[MHCameraInputObservation+Point]::new();$foreground=0;$middle=0;$movement=0;$backspace=0;$until=[DateTime]::UtcNow.AddSeconds(20)
+ while([DateTime]::UtcNow -lt $until){
+  if([MHCameraInputObservation]::InGame([uint32]$game.Id)){
+   $foreground++;$moved=[MHCameraInputObservation]::CursorMoved([ref]$point)
+   if(([MHCameraInputObservation]::GetAsyncKeyState(4) -band 0x8000) -ne 0){$middle++;if($moved){$movement++}}
+   if(([MHCameraInputObservation]::GetAsyncKeyState(8) -band 0x8000) -ne 0){$backspace++}
+  };Start-Sleep -Milliseconds 20
+ }
+ Write-Host "Windows observation: game-focused samples=$foreground middle-held samples=$middle middle-plus-movement samples=$movement Backspace-down samples=$backspace"
+ Write-Host 'This establishes Windows button state only, not whether the game handled an event or rotated the camera.'
 }
 Write-Host 'Backspace has no plain gameplay binding in the stock game default. A missing Backspace Bindings entry alone is not evidence of broken text input.'
 Write-Host 'Do not paste account credentials or the full game command line. Copy the diagnostic lines above back into the chat.'
