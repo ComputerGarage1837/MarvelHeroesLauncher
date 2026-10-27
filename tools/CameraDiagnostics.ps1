@@ -18,4 +18,14 @@ try {
 $docs=[Environment]::GetFolderPath('MyDocuments')
 $inputs=@(@{name='Game default';path=(Join-Path $root 'UnrealEngine3/MarvelGame/Config/DefaultInput.ini')},@{name='Player input';path=(Join-Path $docs 'My Games/Marvel Heroes/MarvelGame/Config/MarvelInput.ini')},@{name='Player input settings';path=(Join-Path $docs 'My Games/Marvel Heroes/MarvelGame/Config/MarvelInputUserSettings.ini')})
 foreach($inputFile in $inputs){if(-not(Test-Path -LiteralPath $inputFile.path)){Write-Host "$($inputFile.name): not present";continue};$s=Get-Content -LiteralPath $inputFile.path -Raw;$middle=[regex]::Matches($s,'(?im)^\s*[.!+]?Bindings=\(Name="MiddleMouseButton"[^\r\n]*');$ours=@($middle|Where-Object Value -match 'KBM_MMB').Count;$custom=$middle.Count-$ours;$cam=($s -match 'Name="KBM_CamX"') -and ($s -match 'Name="KBM_CamY"');$rb=($s -match 'Name="XboxTypeS_RightShoulder"[^\r\n]*VFXToggleOtherPlayerPowerEffects');$axes=[regex]::Matches($s,'(?im)^\s*[.!+]?Bindings=\(Name="Mouse[XY]"[^\r\n]*');$oursAxes=@($axes|Where-Object Value -match 'KBM_Cam').Count;$otherAxes=$axes.Count-$oursAxes;$mmb=($s -match 'Name="KBM_MMB"[^\r\n]*SetBind MouseX KBM_CamX[^\r\n]*SetBind MouseY KBM_CamY');$axisX=($s -match 'Name="KBM_CamX"[^\r\n]*Axis GamepadRawJoyLookRight');$axisY=($s -match 'Name="KBM_CamY"[^\r\n]*Axis GamepadRawJoyLookUp');Write-Host "$($inputFile.name): mouse=$ours other-middle=$custom camera-aliases=$cam mouse-command=$mmb axis-X=$axisX axis-Y=$axisY controller-RB=$rb active-camera-axes=$oursAxes other-mouse-axes=$otherAxes"}
+foreach($inputFile in $inputs){
+ if(-not(Test-Path -LiteralPath $inputFile.path)){continue}
+ $content=Get-Content -LiteralPath $inputFile.path -Raw
+ $matchesF7=[regex]::Matches($content,'(?im)^\s*[.!+]?Bindings=\(Name="F7"[^\r\n]*')
+ $cameraF7=@($matchesF7|Where-Object Value -match 'Command="KBM_Toggle(On|Off)"').Count
+ $otherF7=$matchesF7.Count-$cameraF7
+ $toggleOn=$content -match 'Name="KBM_ToggleOn"[^\r\n]*SetBind MouseX KBM_CamX[^\r\n]*SetBind MouseY KBM_CamY'
+ $toggleOff=$content -match 'Name="KBM_ToggleOff"[^\r\n]*SetBind MouseX KBM_None[^\r\n]*SetBind MouseY KBM_None'
+ Write-Host "$($inputFile.name) F7: camera=$cameraF7 other=$otherF7 toggle-on=$toggleOn toggle-off=$toggleOff"
+}
 Write-Host 'Diagnostic complete. Copy the lines above back into the chat.'
