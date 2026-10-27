@@ -24,22 +24,38 @@ Do not reuse an existing version for changed files. Keep prereleases out of the 
 
 ## Prepare a full game download
 
+The October 25, 2026 supplied live client is staged separately under
+`client-baselines/live-20261025`. Keep this directory unchanged as the
+baseline for future modifications. Its adjacent `.manifest.json` records the
+supplied file hashes. The original transfer ZIP is retained separately. To
+recreate the baseline in a new, empty location, use `tools/StageSuppliedClient.ps1`
+with the transfer ZIP and a destination that does not yet exist; it checks
+every extracted game file against the supplied manifest.
+
+Do not publish this baseline as an automatic upgrade for older installations
+without a verified previous client or another explicit, safe migration path.
+The old updater checks changed files against their prior hashes and does not
+support removal patches. A matching fresh-install package still needs to be
+prepared, tested, and published before Install Game becomes available.
+
 Run with PowerShell 7 on a machine with the game files:
 
 ```powershell
-./tools/NewClientDistribution.ps1 -ClientFolder 'D:\Games\Marvel Heroes' -Version 1.52.0.1700
+./tools/NewClientDistribution.ps1 -ClientFolder './client-baselines/live-20261025' -Version 1.0.0
 ```
 
 The folder must contain the Win64 executable somewhere beneath it. The tool packages game files and default configuration, excludes saved data/logs, and splits the ZIP into 1 GiB release assets. Large individual game files are supported through Zip64. The unsplit ZIP is a local build artifact and must not be uploaded.
 
 Create a prerelease named/tagged `client-patches`. Upload all `client-full-*.zip.partNNN` files and the matching `.package.json` descriptor to that prerelease. Then publish a new launcher version through Actions. The workflow brings those assets into the stable release and enables Install Game. Retain sufficient disk space during packaging and installation; the installer requires temporary staging and rollback space.
 
+For large initial uploads, `tools/PublishClientAssets.ps1` streams the parts to the existing staging release and starts the release workflow after every part is present. The workflow creates a draft and verifies and transfers one part at a time before publishing, so it does not require the whole game on the build runner. Confirm that the workflow succeeded before telling players the download is available.
+
 ## Prepare client patches
 
 Put only changed files in a folder with paths relative to the existing game root. Keep a copy of the **previous** client version for baseline hashes:
 
 ```powershell
-./tools/NewClientPatch.ps1 -ChangedFiles 'D:\PatchFiles' -PreviousClient 'D:\PreviousClient' -FromVersion 1.52.0.1700 -Version 1.52.0.1701
+./tools/NewClientPatch.ps1 -ChangedFiles 'D:\PatchFiles' -PreviousClient './client-baselines/live-20261025' -FromVersion 1.0.0 -Version 1.0.1
 ```
 
 Upload the generated `client-*.zip` and `.package.json` to the `client-patches` prerelease, then publish the next launcher release. Retain every patch in the chain so players can catch up from earlier versions. Patches add/replace files; deletion patches are not supported. The builder excludes configuration files from patches. Full installations can include the original default configuration.

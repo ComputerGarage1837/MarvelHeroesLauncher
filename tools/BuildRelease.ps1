@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Repository,[Parameter(Mandatory)][version]$Version,[string]$OutputDirectory=(Join-Path $PSScriptRoot '../dist'))
+param([Parameter(Mandatory)][string]$Repository,[Parameter(Mandatory)][version]$Version,[string]$OutputDirectory=(Join-Path $PSScriptRoot '../dist'),[switch]$MetadataOnly)
 $ErrorActionPreference='Stop'
 if($Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'){throw 'Use owner/repository.'}
 $source=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../launcher'))
@@ -15,7 +15,7 @@ $packages=@()
 if(Test-Path (Join-Path $out 'previous-manifest.json')){
  $previous=Get-Content (Join-Path $out 'previous-manifest.json') -Raw|ConvertFrom-Json
  $packages+=@($previous.packages|Where-Object component -in @('client','client-full'))
- foreach($package in $packages){$assets=if($package.PSObject.Properties['parts']){@($package.parts.asset)}else{@($package.asset)};foreach($assetName in $assets){if(-not(Test-Path (Join-Path $out $assetName))){throw "Missing retained client asset: $assetName"}}}
+ if(-not $MetadataOnly){foreach($package in $packages){$assets=if($package.PSObject.Properties['parts']){@($package.parts.asset)}else{@($package.asset)};foreach($assetName in $assets){if(-not(Test-Path (Join-Path $out $assetName))){throw "Missing retained client asset: $assetName"}}}}
 }
 foreach($descriptor in Get-ChildItem $out -Filter 'client-*.package.json'){
  $package=Get-Content $descriptor.FullName -Raw|ConvertFrom-Json
@@ -23,10 +23,33 @@ foreach($descriptor in Get-ChildItem $out -Filter 'client-*.package.json'){
  if($package.component -eq 'client-full'){$packages=@($packages|Where-Object component -ne 'client-full')}elseif(@($packages|Where-Object {$_.version -eq $package.version -and $_.component -eq 'client'}).Count){continue}
  $packages+=,$package
 }
+# A newly published full client defines the start of its own patch chain.
+# Retired packages from an earlier numbering scheme must not be offered to
+# fresh installations, because their fromVersion cannot follow this baseline.
+$fullPackages=@($packages|Where-Object component -eq 'client-full')
+if($fullPackages.Count -gt 1){throw 'Multiple full client baselines found.'}
+if($fullPackages.Count -eq 1){
+ $allPatches=@($packages|Where-Object component -eq 'client');$chain=@();$at=[version]$fullPackages[0].version
+ while($true){
+  $next=@($allPatches|Where-Object {[version]$_.fromVersion -eq $at})
+  if($next.Count -gt 1){throw "Ambiguous client patch chain at $at."}
+  if($next.Count -eq 0){break}
+  if([version]$next[0].version -le $at){throw 'Client patch versions must increase.'}
+  $chain+=,$next[0];$at=[version]$next[0].version
+ }
+ foreach($orphan in $allPatches){
+  if($orphan -in $chain){continue}
+  if([string]$fullPackages[0].version -eq '1.0.0' -and [string]$orphan.fromVersion -eq '1.52.0.1700' -and [string]$orphan.version -eq '1.52.0.1701'){Write-Warning 'Omitting the retired pre-1.0 client patch.';continue}
+  throw "Client patch $($orphan.version) does not follow the current full client baseline."
+ }
+ $packages=@($packages|Where-Object component -ne 'client')+@($chain)
+}
 foreach($package in $packages){
  $checkAssets=if($package.PSObject.Properties['parts']){@($package.parts)}else{@([pscustomobject]@{asset=$package.asset;sha256=$package.sha256})}
  foreach($entry in $checkAssets){
   if($entry.asset -notmatch '^[A-Za-z0-9_.-]+$'){throw 'Unsafe client asset name.'}
+  if($entry.sha256 -notmatch '^[a-fA-F0-9]{64}$'){throw 'Invalid client asset hash.'}
+  if($MetadataOnly){continue}
   $assetPath=Join-Path $out $entry.asset
   if(-not(Test-Path -LiteralPath $assetPath)){throw "Client package is incomplete: $($entry.asset)"}
   if((Get-FileHash -LiteralPath $assetPath).Hash -ne $entry.sha256){throw "Client asset checksum mismatch: $($entry.asset)"}

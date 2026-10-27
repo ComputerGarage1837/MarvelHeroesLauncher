@@ -75,6 +75,18 @@ function Write-JsonAtomic($Value,[string]$Path){
 function Assert-Hash([string]$Path,[string]$Expected){
  if($Expected -notmatch '^[a-fA-F0-9]{64}$' -or (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ne $Expected){throw 'Update checksum verification failed.'}
 }
+function Find-ClientRoot([string]$Selected,[switch]$SearchDescendants){
+ if(-not $Selected -or -not (Test-Path -LiteralPath $Selected -PathType Container)){return $null}
+ $selectedPath=[IO.Path]::GetFullPath($Selected)
+ $suffix='UnrealEngine3\Binaries\Win64\MarvelHeroesOmega.exe'
+ foreach($candidate in @($selectedPath,(Join-Path $selectedPath 'Client'))){
+  if(Test-Path -LiteralPath (Join-Path $candidate $suffix) -PathType Leaf){return $candidate}
+ }
+ if(-not $SearchDescendants){return $null}
+ $matches=@(Get-ChildItem -LiteralPath $selectedPath -Recurse -Filter 'MarvelHeroesOmega.exe' -File -ErrorAction SilentlyContinue | Where-Object {$_.FullName.EndsWith('\'+$suffix,[StringComparison]::OrdinalIgnoreCase) -and $_.FullName -notmatch '\\.mh-updates\\'})
+ if($matches.Count -ne 1){return $null}
+ return $matches[0].FullName.Substring(0,$matches[0].FullName.Length-$suffix.Length-1)
+}
 function Get-PlayerSettingsPath([string]$LauncherRoot){
  $bytes=[Text.Encoding]::UTF8.GetBytes([IO.Path]::GetFullPath($LauncherRoot).TrimEnd('\').ToLowerInvariant())
  $key=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).Substring(0,16)

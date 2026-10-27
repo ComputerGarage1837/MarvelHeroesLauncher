@@ -18,6 +18,7 @@ jobs:
         shell: pwsh
         run: |
           ./tests/Update.Tests.ps1
+          ./tests/Repair.Tests.ps1
           ./tests/PlayerExperience.Tests.ps1
           ./tests/NativeLauncher.Tests.ps1
           pwsh -NoProfile -STA -File ./launcher/Play.ps1 -ValidateOnly
@@ -35,11 +36,10 @@ jobs:
           gh release download --repo $env:REPOSITORY --pattern update-manifest.json --dir dist
           if (Test-Path dist/update-manifest.json) {
             Move-Item dist/update-manifest.json dist/previous-manifest.json
-            gh release download --repo $env:REPOSITORY --pattern 'client-*' --dir dist --clobber
           }
-          gh release download client-patches --repo $env:REPOSITORY --pattern 'client-*' --dir dist --clobber
+          gh release download client-patches --repo $env:REPOSITORY --pattern 'client-*.package.json' --dir dist --clobber
           $global:LASTEXITCODE = 0
-          ./tools/BuildRelease.ps1 -Repository $env:REPOSITORY -Version $version
+          ./tools/BuildRelease.ps1 -Repository $env:REPOSITORY -Version $version -MetadataOnly
           "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Publish release
         shell: pwsh
@@ -47,7 +47,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          $assets = @(Get-ChildItem dist -File | Where-Object { $_.Name -eq 'update-manifest.json' -or $_.Name -like 'launcher-*.zip' -or $_.Name -eq 'MarvelHeroesLauncher-Install.zip' -or $_.Name -match '^client-.*\.zip(\.part\d+)?$' } | ForEach-Object FullName)
-          $assets = @($assets | Where-Object { $_ -notmatch 'client-full-.*\.zip$' })
-          gh release create "v$env:RELEASE_VERSION" @assets --repo $env:REPOSITORY --title "Marvel Heroes Launcher $env:RELEASE_VERSION" --notes 'Launcher update with the latest available game installation and patch packages.' --latest
-          if ($LASTEXITCODE -ne 0) { throw 'Release publishing failed' }
+          $assets = @(Get-ChildItem dist -File | Where-Object { $_.Name -eq 'update-manifest.json' -or $_.Name -like 'launcher-*.zip' -or $_.Name -eq 'MarvelHeroesLauncher-Install.zip' } | ForEach-Object FullName)
+          $previous = (gh api "repos/$env:REPOSITORY/releases/latest" | ConvertFrom-Json).tag_name
+          gh release create "v$env:RELEASE_VERSION" @assets --repo $env:REPOSITORY --title "Marvel Heroes Launcher $env:RELEASE_VERSION" --notes 'Launcher update with the latest available game installation and patch packages.' --draft
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create draft release.' }
+          $manifest = Get-Content dist/update-manifest.json -Raw | ConvertFrom-Json
+          New-Item -ItemType Directory dist/one-part -Force | Out-Null
+          foreach ($package in @($manifest.packages | Where-Object component -in @('client','client-full'))) {
+            $parts = if ($package.PSObject.Properties['parts']) { @($package.parts) } else { @([pscustomobject]@{asset=$package.asset;sha256=$package.sha256}) }
+            foreach ($part in $parts) {
+              gh release download client-patches --repo $env:REPOSITORY --pattern $part.asset --dir dist/one-part --clobber
+              if ($LASTEXITCODE -ne 0) { gh release download $previous --repo $env:REPOSITORY --pattern $part.asset --dir dist/one-part --clobber }
+              if ($LASTEXITCODE -ne 0) { throw "Missing client asset: $($part.asset)" }
+              $local = Join-Path dist/one-part $part.asset
+              if ((Get-FileHash -LiteralPath $local -Algorithm SHA256).Hash -ne $part.sha256) { throw "Client asset checksum mismatch: $($part.asset)" }
+              gh release upload "v$env:RELEASE_VERSION" $local --repo $env:REPOSITORY
+              if ($LASTEXITCODE -ne 0) { throw "Could not upload client asset: $($part.asset)" }
+              Remove-Item -LiteralPath $local -Force
+            }
+          }
+          gh release edit "v$env:RELEASE_VERSION" --repo $env:REPOSITORY --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish the verified release.' }

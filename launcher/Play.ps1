@@ -6,6 +6,11 @@ Set-StrictMode -Off
 $root=$PSScriptRoot
 $choices=@('Automatic (monitor resolution)','1280 x 720  |  16:9','1920 x 1080  |  16:9','2560 x 1440  |  16:9','3840 x 2160  |  16:9','2560 x 1080  |  Ultrawide 21:9','3440 x 1440  |  Ultrawide 21:9','3840 x 1600  |  Ultrawide 21:9','5120 x 2160  |  Ultrawide 21:9','3840 x 1080  |  Super ultrawide 32:9','5120 x 1440  |  Super ultrawide 32:9','7680 x 2160  |  Super ultrawide 32:9')
 $saved=Get-PlayerSettings $root
+if(-not $saved.SetupComplete){
+ $candidates=@($saved.ClientPath,(Join-Path $root 'Marvel Heroes'),(Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Marvel Heroes'))
+ if(${env:ProgramFiles(x86)}){$candidates+=Join-Path ${env:ProgramFiles(x86)} 'Steam\steamapps\common\Marvel Heroes'}
+ foreach($candidate in $candidates){$found=Find-ClientRoot $candidate;if($found){$saved.ClientPath=$found;break}}
+}
 $nativeLauncher=Ensure-NativeLauncher $root
 if($saved.Resolution -notin $choices){$choices+=,[string]$saved.Resolution}
 function Save-Settings {Save-PlayerSettings $root $saved}
@@ -52,7 +57,7 @@ if(-not $ValidateOnly){
 }
 [xml]$xaml=Get-Content (Join-Path $root 'Launcher.xaml') -Raw
 $reader=[Xml.XmlNodeReader]::new($xaml);$window=[Windows.Markup.XamlReader]::Load($reader)
-$ui=@{};foreach($name in @('SettingsButton','AccountButton','HeroImage','UpdateSummary','UpdateButton','GameLocation','FolderButton','LocateButton','StatusText','PercentText','Progress','DetailText','PlayButton','VersionLabel','UpdateNotice','UpdateHeading','UpdateCard','ConnectionButton')){$ui[$name]=$window.FindName($name)}
+$ui=@{};foreach($name in @('SettingsButton','AccountButton','HeroImage','UpdateSummary','UpdateButton','GameLocation','FolderButton','LocateButton','RepairButton','StatusText','PercentText','Progress','DetailText','PlayButton','VersionLabel','UpdateNotice','UpdateHeading','UpdateCard','ConnectionButton')){$ui[$name]=$window.FindName($name)}
 $version=(Get-Content (Join-Path $root 'InstalledVersions.json') -Raw|ConvertFrom-Json).launcher;$ui.VersionLabel.Text='LAUNCHER '+$version
 $script:images=@();foreach($name in @('avengers-endgame.jpg','avengers-infinity-war.jpg')){$bitmap=[Windows.Media.Imaging.BitmapImage]::new();$bitmap.BeginInit();$bitmap.CacheOption='OnLoad';$bitmap.UriSource=[Uri]::new((Join-Path $root "Assets/$name"));$bitmap.EndInit();$bitmap.Freeze();$script:images+=,$bitmap}
 $ui.HeroImage.Source=$script:images[0];$script:filmIndex=0
@@ -81,7 +86,8 @@ $connectionTimer.Add_Tick({
 })
 function Refresh-Game {
  $script:installed=$false
- if(Test-Path -LiteralPath $saved.ClientPath){$script:installed=$null -ne (Get-ChildItem -LiteralPath $saved.ClientPath -Recurse -Filter MarvelHeroesOmega.exe -File -ErrorAction SilentlyContinue|Where-Object {$_.FullName -match '\\Win64\\' -and $_.FullName -notmatch '\\.mh-updates\\'}|Select-Object -First 1)}
+ $detected=Find-ClientRoot $saved.ClientPath -SearchDescendants
+ if($detected){$script:installed=$true;if($saved.ClientPath -ine $detected){$saved.ClientPath=$detected;Save-Settings}}
  $ui.GameLocation.Text=$saved.ClientPath
  $ui.PlayButton.Content=if($script:installed){'PLAY'}else{'INSTALL GAME'}
  Sync-ServerChoice
@@ -98,14 +104,14 @@ function Sync-UpdateState {
  $ui.UpdateButton.Foreground=if($script:available){[Windows.Media.Brushes]::Black}else{[Windows.Media.BrushConverter]::new().ConvertFromString('#E6D29D')}
  if($script:available -and -not $script:busy){$ui.StatusText.Text='Update required before playing.';$ui.DetailText.Text='Select INSTALL UPDATE above. Play unlocks after installation completes.'}
 }
-function Set-Busy([bool]$Busy){$script:busy=$Busy;foreach($key in @('SettingsButton','AccountButton','FolderButton','LocateButton','UpdateButton')){$ui[$key].IsEnabled=-not $Busy};Sync-UpdateState}
+function Set-Busy([bool]$Busy){$script:busy=$Busy;foreach($key in @('SettingsButton','AccountButton','FolderButton','LocateButton','RepairButton','UpdateButton')){$ui[$key].IsEnabled=-not $Busy};Sync-UpdateState}
 function Select-GameFolder([bool]$Existing){
  $dialog=[System.Windows.Forms.FolderBrowserDialog]::new();$dialog.Description=if($Existing){'Select the folder containing your Marvel Heroes game'}else{'Choose a dedicated game installation folder'};$dialog.UseDescriptionForTitle=$true
  $dialog.SelectedPath=$saved.ClientPath
  if($dialog.ShowDialog() -eq 'OK'){
   $picked=[IO.Path]::GetFullPath($dialog.SelectedPath)
   if($picked.TrimEnd('\') -eq [IO.Path]::GetPathRoot($picked).TrimEnd('\') -or $picked.TrimEnd('\') -eq $root.TrimEnd('\')){[void][System.Windows.MessageBox]::Show('Choose a dedicated game folder, not a drive root or launcher folder.');$dialog.Dispose();return}
-  if($Existing -and -not(Get-ChildItem -LiteralPath $picked -Recurse -File -Filter MarvelHeroesOmega.exe -ErrorAction SilentlyContinue|Where-Object {$_.FullName -match '\\Win64\\' -and $_.FullName -notmatch '\\.mh-updates\\'}|Select-Object -First 1)){[void][System.Windows.MessageBox]::Show('No Win64 Marvel Heroes client was found in that folder.');$dialog.Dispose();return}
+  if($Existing){$found=Find-ClientRoot $picked -SearchDescendants;if(-not $found){[void][System.Windows.MessageBox]::Show('No single Win64 Marvel Heroes client was found in that folder. Select the game folder directly.');$dialog.Dispose();return};$picked=$found}
   $saved.ClientPath=$picked;Save-Settings;Refresh-Game
   $script:verified=$false;Start-Worker 'Check'
  }
@@ -150,7 +156,7 @@ function Start-Worker([string]$Action){
  if($Action -ne 'Check' -and (Get-Process MarvelHeroesOmega -ErrorAction SilentlyContinue)){$ui.StatusText.Text='The game is already running. Close it before updating.';return}
  Save-Settings;New-Item -ItemType Directory (Join-Path $root '.updates') -Force|Out-Null
  if(Test-Path $progressFile){Remove-Item -LiteralPath $progressFile -Force}
- if($Action -in @('Update','InstallGame')){
+ if($Action -in @('Update','InstallGame','Repair')){
   $workerDirectory=Join-Path ([IO.Path]::GetTempPath()) ('MarvelHeroesUpdater-'+[guid]::NewGuid().ToString('N'))
   [IO.Directory]::CreateDirectory($workerDirectory)|Out-Null
   foreach($file in @('Update.ps1','UpdateCore.ps1','Transfer.ps1')){Copy-Item -LiteralPath (Join-Path $root $file) -Destination $workerDirectory}
@@ -169,6 +175,7 @@ function Start-Worker([string]$Action){
  $workerTimer.Start()
 }
 $ui.PlayButton.Add_Click({try{if($script:installed){Start-Worker 'Launch'}elseif($script:fullAvailable){Start-Worker 'InstallGame'}else{$ui.StatusText.Text='Full game download is not published yet. Use Locate existing game.'}}catch{$ui.StatusText.Text=$_.Exception.Message;Set-Busy $false}})
+$ui.RepairButton.Add_Click({try{if(-not $script:fullAvailable){$ui.StatusText.Text='The repair source is not available yet.';return};$choice=[System.Windows.MessageBox]::Show('Verify game files against the current release? Missing or changed files will be restored. Player settings and protected fixes are kept. Repair may download the full game.','Verify / repair','YesNo','Question');if($choice -eq 'Yes'){Start-Worker 'Repair'}}catch{$ui.StatusText.Text=$_.Exception.Message;Set-Busy $false}})
 $ui.UpdateButton.Add_Click({try{if($script:available){Start-Worker 'Update'}else{Start-Worker 'Check'}}catch{$ui.StatusText.Text=$_.Exception.Message;Set-Busy $false}})
 $workerTimer.Add_Tick({
  if(-not $script:worker.HasExited){
@@ -195,7 +202,7 @@ Refresh-Game
 if($ValidateOnly){
  Show-FirstTimeSetup
  Show-GameSettings
- if($ui.Count -ne 18 -or $script:images.Count -ne 2){throw 'Launcher UI is incomplete.'}
+ if($ui.Count -ne 19 -or $script:images.Count -ne 2){throw 'Launcher UI is incomplete.'}
  # Exercise the actual button gate, including failed checks and retries.
  foreach($case in @(
   @{verified=$false;available=$false;busy=$false;recovery=$false;enabled=$false},
@@ -216,6 +223,6 @@ if($ValidateOnly){
  Write-Output "Validated launcher, $($choices.Count) display presets, folder selection and two artwork slides.";exit 0
 }
 Save-Settings
-$window.Add_ContentRendered({$artTimer.Start();if(-not $saved.SetupComplete){Show-FirstTimeSetup};try{Start-ConnectionCheck;Start-Worker 'Check'}catch{$ui.StatusText.Text='Unable to check updates. Retry to unlock Play.';Set-Busy $false}})
+$window.Add_ContentRendered({$artTimer.Start();if(-not $saved.SetupComplete){Show-FirstTimeSetup;Refresh-Game};try{Start-ConnectionCheck;Start-Worker 'Check'}catch{$ui.StatusText.Text='Unable to check updates. Retry to unlock Play.';Set-Busy $false}})
 try{[void]$window.ShowDialog()}finally{if($launcherLock){if($launcherLock.Acquired){$launcherLock.Mutex.ReleaseMutex()};$launcherLock.Mutex.Dispose()}}
 if($script:restart){Start-Process (Get-Process -Id $PID).Path -ArgumentList ('-NoProfile -STA -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $root 'Play.ps1')) -WindowStyle Hidden}

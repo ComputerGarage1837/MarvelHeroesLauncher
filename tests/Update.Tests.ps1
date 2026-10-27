@@ -2,6 +2,12 @@ $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../launcher/UpdateCore.ps1')
 $testRoot=Join-Path $PSScriptRoot ('sandbox-'+[guid]::NewGuid().ToString('N'));New-Item -ItemType Directory $testRoot|Out-Null
 function Check($condition,$message){if(-not $condition){throw $message};Write-Output "PASS: $message"}
+$foundRoot=Join-Path $testRoot 'moved/My Game';$binary=Join-Path $foundRoot 'UnrealEngine3/Binaries/Win64/MarvelHeroesOmega.exe'
+New-Item -ItemType Directory ([IO.Path]::GetDirectoryName($binary)) -Force|Out-Null;[IO.File]::WriteAllText($binary,'fixture')
+Check ((Find-ClientRoot $foundRoot) -eq $foundRoot) 'Find the game at its actual root'
+Check ((Find-ClientRoot (Join-Path $testRoot 'moved') -SearchDescendants) -eq $foundRoot) 'Find a moved game under a selected parent folder'
+$other=Join-Path $testRoot 'moved/Other/UnrealEngine3/Binaries/Win64/MarvelHeroesOmega.exe';New-Item -ItemType Directory ([IO.Path]::GetDirectoryName($other)) -Force|Out-Null;[IO.File]::WriteAllText($other,'fixture')
+Check (-not (Find-ClientRoot (Join-Path $testRoot 'moved') -SearchDescendants)) 'Do not guess when a selected folder contains multiple games'
 foreach($bad in @('../escape.txt','/absolute','C:/absolute','file:stream','a/../b','CON.txt','trailing.','a\b')){
  $rejected=$false;try{$null=Get-SafePath $testRoot $bad}catch{$rejected=$true};Check $rejected "Reject path $bad"
 }

@@ -45,7 +45,7 @@
    <Border Grid.Column="2" Style="{StaticResource GlassCard}"><Grid Margin="20,17"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock Text="YOUR GAME LIBRARY" Foreground="#D4AF62" FontSize="10" FontWeight="Bold"/>
     <TextBlock x:Name="GameLocation" Grid.Row="1" Text="Choose where your heroes live." FontSize="13" Foreground="#CCD0D6" Margin="0,10,0,8" TextTrimming="CharacterEllipsis"/>
-    <StackPanel Grid.Row="2" Orientation="Horizontal"><Button x:Name="FolderButton" Content="Choose folder" Padding="14,7" FontSize="11" Margin="0,0,8,0"/><Button x:Name="LocateButton" Content="Locate existing game" Padding="14,7" FontSize="11"/></StackPanel>
+    <WrapPanel Grid.Row="2"><Button x:Name="FolderButton" Content="Choose folder" Padding="12,7" FontSize="11" Margin="0,0,8,0"/><Button x:Name="LocateButton" Content="Locate existing game" Padding="12,7" FontSize="11" Margin="0,0,8,0"/><Button x:Name="RepairButton" Content="Verify / repair" Padding="12,7" FontSize="11"/></WrapPanel>
    </Grid></Border>
   </Grid>
   <Border Grid.Row="3" Style="{StaticResource GlassCard}" Margin="32,0,32,8">

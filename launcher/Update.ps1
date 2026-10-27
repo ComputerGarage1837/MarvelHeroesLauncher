@@ -1,4 +1,4 @@
-param([ValidateSet('Check','Update','InstallGame')][string]$Action='Check',[string]$TargetRoot=$PSScriptRoot,[switch]$HostUI,[int]$ParentProcessId=0,[switch]$ValidateHost)
+param([ValidateSet('Check','Update','InstallGame','Repair')][string]$Action='Check',[string]$TargetRoot=$PSScriptRoot,[switch]$HostUI,[int]$ParentProcessId=0,[switch]$ValidateHost)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'UpdateCore.ps1')
 . (Join-Path $PSScriptRoot 'Transfer.ps1')
@@ -62,21 +62,35 @@ try {
  $state=Get-Content (Join-Path $root 'InstalledVersions.json') -Raw|ConvertFrom-Json
  $pending=@();$planned=@{launcher=[string]$state.launcher;client=[string]$gameState.version}
  $full=@($manifest.packages|Where-Object component -eq 'client-full')
- if($Action -eq 'InstallGame'){
-  if($gameInstalled){throw 'A game installation already exists in this folder. Use Check for Updates.'}
+ if($Action -in @('InstallGame','Repair')){
+  if($Action -eq 'InstallGame' -and $gameInstalled){throw 'A game installation already exists in this folder. Use Check for Updates.'}
+  if($Action -eq 'Repair' -and -not (Test-Path -LiteralPath $gamePath -PathType Container)){throw 'Choose an existing game folder before repairing.'}
   if($full.Count -ne 1){throw 'The full game download has not been published yet. Use Locate Game for an existing installation.'}
   $pending+=,$full[0];$planned.client=[string]$full[0].version
  }
  foreach($package in @($manifest.packages)){
   if($package.component -eq 'client-full'){continue}
   if($package.component -notin @('launcher','client')){throw 'Unknown update component.'}
-  if($package.component -eq 'client' -and -not $gameInstalled -and $Action -ne 'InstallGame'){continue}
+  if($package.component -eq 'client' -and -not $gameInstalled -and $Action -notin @('InstallGame','Repair')){continue}
   $current=[version]$planned[$package.component]
   if([version]$package.version -le $current){continue}
   if($package.component -eq 'client' -and [version]$package.fromVersion -ne $current){throw 'Client patch baseline does not match this installation.'}
   $planned[$package.component]=[string]$package.version;$pending+=,$package
  }
  if($Action -eq 'Check'){@{available=($pending.Count -gt 0);fullAvailable=($full.Count -eq 1);gameInstalled=$gameInstalled;summary=(($pending|ForEach-Object {"$($_.component) $($_.version)"}) -join ', ');release=[string]$release.name}|ConvertTo-Json -Compress;exit 0}
+ if($Action -eq 'Repair'){
+  $expected=@{};foreach($package in $pending){if($package.component -in @('client-full','client')){foreach($file in $package.files){$expected[$file.path]=$file}}}
+  $mismatch=0;$checked=0
+  foreach($file in $expected.Values){
+   if($file.path -notlike 'Client/*'){throw 'Invalid client repair path.'}
+   $relative=$file.path.Substring(7);$target=Get-SafePath $gamePath $relative
+   if((Test-ProtectedClientFile $gamePath $relative) -and $relative -notmatch '(?i)(^|/)MarvelHeroesOmega\.exe$'){continue}
+   if(-not(Test-Path -LiteralPath $target -PathType Leaf) -or (Get-Item -LiteralPath $target).Length -ne [long]$file.size -or (Get-FileHash -LiteralPath $target).Hash -ne $file.sha256){$mismatch++}
+   $checked++;if($checked % 100 -eq 0){Set-TransferStatus "Checking game files ($checked/$($expected.Count))" $checked $expected.Count}
+  }
+  if($mismatch -eq 0){[IO.Directory]::CreateDirectory($gamePath)|Out-Null;Write-JsonAtomic @{version=$planned.client;preservedCustomizations=@()} $gameStatePath;Write-Output 'Game files verified; no repair needed.';exit 0}
+  Set-TransferStatus "Found $mismatch missing or changed files; preparing repair"
+ }
  if($pending.Count -eq 0){Write-Output 'Already up to date.';exit 0}
  if(Get-Process MarvelHeroesOmega -ErrorAction SilentlyContinue){throw 'Close the game before updating.'}
  $launcherFiles=@('Play.ps1','StartGame.ps1','CreateAccount.ps1','Update.ps1','UpdateCore.ps1','Transfer.ps1','Launcher.xaml','Play.bat','Launch-Portable.bat','StartClient.bat','StartClientAutoLogin.bat','READ-ME.txt','Assets/avengers-endgame.jpg','Assets/avengers-infinity-war.jpg','Assets/CREDITS.txt')
@@ -93,7 +107,7 @@ try {
   foreach($file in $package.files){
    if(-not $isGame -and $file.path -notin $launcherFiles){throw 'Launcher package contains a protected file.'}
    if($isGame -and ($file.path -notlike 'Client/*' -or $file.path -match '(?i)(^|/)(Saved|SaveGames|Logs|Screenshots|\.mh[^/]*)(/|$)|\.(log|db)$')){throw 'Client update contains a protected file.'}
-   if($isGame -and (Test-ProtectedClientFile $gamePath $file.path.Substring(7))){$preserved+=,$file.path.Substring(7)}
+   if($isGame -and (Test-ProtectedClientFile $gamePath $file.path.Substring(7)) -and -not ($Action -eq 'Repair' -and $file.path -match '(?i)(^|/)MarvelHeroesOmega\.exe$')){$preserved+=,$file.path.Substring(7)}
    $null=Get-SafePath $root $file.path
    if($paths.ContainsKey($file.path)){throw 'Duplicate package path.'};$paths[$file.path]=$true
    if([long]$file.size -lt 0){throw 'Invalid file size.'};$totalSize+=[long]$file.size
@@ -120,7 +134,7 @@ try {
   Set-TransferStatus 'Verifying and unpacking files'
   Expand-VerifiedPackage $archive $stage $package.files
   foreach($file in $package.files){
-   if($isGame){if($file.path.Substring(7) -in $preserved){continue};$copy=[pscustomobject]@{path=$file.path.Substring(7);size=$file.size;sha256=$file.sha256;protectLocal=$true;baseSha256=if($file.PSObject.Properties['baseSha256']){$file.baseSha256}else{''}};$allFiles+=,$copy}else{$allFiles+=,$file}
+   if($isGame){if($file.path.Substring(7) -in $preserved){continue};$relative=$file.path.Substring(7);$base=if($file.PSObject.Properties['baseSha256']){$file.baseSha256}else{''};if($Action -eq 'Repair'){$existing=Get-SafePath $gamePath $relative;if(Test-Path -LiteralPath $existing -PathType Leaf){$base=(Get-FileHash -LiteralPath $existing).Hash;if($base -eq $file.sha256){continue}}};$copy=[pscustomobject]@{path=$relative;size=$file.size;sha256=$file.sha256;protectLocal=$true;baseSha256=$base};$allFiles+=,$copy}else{$allFiles+=,$file}
   }
   if($isGame){$stage=Join-Path $stage 'Client';$gameState.version=[string]$package.version;$gameState|Add-Member -NotePropertyName preservedCustomizations -NotePropertyValue $preserved -Force;$versionFile='.mh-client-version.json';Write-JsonAtomic $gameState (Join-Path $stage $versionFile)}
   else{$state.launcher=[string]$package.version;$versionFile='InstalledVersions.json';Write-JsonAtomic $state (Join-Path $stage $versionFile);$launcherChanged=$true}

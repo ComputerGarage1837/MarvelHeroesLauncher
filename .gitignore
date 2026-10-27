@@ -1,4 +1,5 @@
 dist/
+client-baselines/
 launcher/LauncherSettings.json
 launcher/Client/
 launcher/.updates/
