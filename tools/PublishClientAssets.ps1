@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Directory,[Parameter(Mandatory)][version]$LauncherVersion,[string]$Repository='ComputerGarage1837/MarvelHeroesLauncher')
+param([Parameter(Mandatory)][string]$Directory,[Parameter(Mandatory)][version]$LauncherVersion,[string]$Repository='ComputerGarage1837/MarvelHeroesLauncher',[switch]$StageOnly)
 $ErrorActionPreference='Stop'
 if($Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'){throw 'Invalid repository.'}
 $env:GIT_TERMINAL_PROMPT='0';$env:GCM_INTERACTIVE='Never'
@@ -29,6 +29,7 @@ try{
   $response=$null;$stream=[IO.File]::OpenRead($file.FullName);$content=[Net.Http.StreamContent]::new($stream);$content.Headers.ContentType=[Net.Http.Headers.MediaTypeHeaderValue]::new('application/octet-stream')
   try{$url=($release.upload_url -split '\{')[0]+'?name='+[uri]::EscapeDataString($item.name);if(-not $url.StartsWith('https://uploads.github.com/')){throw 'Untrusted upload URL.'};$response=$http.PostAsync($url,$content).GetAwaiter().GetResult();if(-not $response.IsSuccessStatusCode){throw "GitHub upload failed with HTTP $([int]$response.StatusCode)."};$result=$response.Content.ReadAsStringAsync().GetAwaiter().GetResult()|ConvertFrom-Json;if([long]$result.size -ne $item.size){throw 'Uploaded asset has an unexpected size.'};if($result.digest -and $result.digest -ne ('sha256:'+$item.sha256)){throw 'Uploaded asset checksum differs.'}}finally{$content.Dispose();$stream.Dispose();if($response){$response.Dispose()}}
  }
+ if($StageOnly){Write-Output 'All client parts uploaded to staging; no release was started.';return}
  $body=@{ref='main';inputs=@{version="$LauncherVersion"}}|ConvertTo-Json
  Invoke-RestMethod "$base/actions/workflows/release.yml/dispatches" -Headers $headers -Method Post -ContentType 'application/json' -Body $body|Out-Null
  Write-Output "Uploaded all parts and started release v$LauncherVersion. Confirm the workflow succeeds before calling the download available."
