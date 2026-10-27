@@ -70,7 +70,7 @@ pwsh -STA -File ./launcher/Play.ps1 -ValidateOnly
 
 Launcher settings are per installation. Game patch state is stored in `.mh-client-version.json` inside the selected game folder. `.mh-updates` holds client download cache, staging and rollback copies. `.updates` holds launcher equivalents. These are not part of player save data; character progress remains on the server.
 
-The currently published baseline assumes the compatible 1.52.0.1700 Win64 client. An existing game without patch metadata is treated as this baseline; patches still verify each changed file against its expected baseline hash before replacement.
+The retired release used a separate 1.52.0.1700 numbering scheme. Once the 1.0 baseline is published, existing installs using that scheme are adopted only after their game files match the current release. If they differ, the launcher offers verification and repair instead of silently replacing them. Future patches use versions such as 1.0.1 and compare changed files against their expected baseline hashes before replacement.
 
 ## Artwork
 
