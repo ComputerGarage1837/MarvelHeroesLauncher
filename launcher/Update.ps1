@@ -57,7 +57,7 @@ try {
  $release=Invoke-RestMethod "https://api.github.com/repos/$repository/releases/latest" -Headers $headers -TimeoutSec 20
  $asset=@($release.assets|Where-Object name -eq 'update-manifest.json');$prefix="https://github.com/$repository/releases/download/"
  if($asset.Count -ne 1 -or -not $asset[0].browser_download_url.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){throw 'Release manifest missing or untrusted.'}
- $manifest=Invoke-RestMethod $asset[0].browser_download_url -TimeoutSec 20
+ $manifest=Invoke-RestMethod $asset[0].browser_download_url -TimeoutSec 300
  if($manifest.schemaVersion -ne 1){throw 'Unsupported update manifest.'}
  $state=Get-Content (Join-Path $root 'InstalledVersions.json') -Raw|ConvertFrom-Json
  $pending=@();$planned=@{launcher=[string]$state.launcher;client=[string]$gameState.version}
