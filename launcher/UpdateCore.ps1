@@ -219,10 +219,11 @@ function Test-MarvelConnection([string]$Server='',[int]$GamePort=0,[string]$Prof
  try{$task=$tcp.ConnectAsync($hostName,$GamePort);if(-not $task.Wait(6000) -or -not $tcp.Connected){throw 'Timeout'};$checks+=,[pscustomobject]@{Name='Game connection';Ok=$true;Message='Reachable'}}catch{$checks+=,[pscustomobject]@{Name='Game connection';Ok=$false;Message='Game port is unreachable. Check firewall access or ask the server owner to check the game service and port forwarding.'}}finally{$tcp.Dispose()}
  return [pscustomobject]@{Server=$Profile;ServerName=$selected.Name;Reachable=(@($checks|Where-Object {-not $_.Ok}).Count -eq 0);CheckedAt=[DateTime]::Now.ToString('HH:mm:ss');Checks=$checks}
 }
-function Test-ProtectedClientFile([string]$Root,[string]$Relative){
+function Test-ProtectedClientFile([string]$Root,[string]$Relative,[switch]$AllowExecutableRepair){
  $path=Get-SafePath $Root $Relative
  if(-not(Test-Path -LiteralPath $path)){return $false}
- if($Relative -match '(?i)(^|/)(Config|Saved|SaveGames|Screenshots)(/|$)|\.ini$|(^|/)MarvelHeroesOmega\.exe$'){return $true}
+ if($Relative -match '(?i)(^|/)(Config|Saved|SaveGames|Screenshots)(/|$)|\.ini$'){return $true}
+ if(-not $AllowExecutableRepair -and $Relative -match '(?i)(^|/)MarvelHeroesOmega\.exe$'){return $true}
  $list=Join-Path $Root '.mh-protected-files.json'
  if(Test-Path -LiteralPath $list){
   $data=Read-SharedText $list|ConvertFrom-Json

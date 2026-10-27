@@ -49,3 +49,8 @@ Add-Content (Join-Path $launcher 'Transfer.ps1') "`nfunction Receive-Asset([stri
 if($LASTEXITCODE -ne 0 -or [IO.File]::ReadAllText((Join-Path $game 'Data/test.bin')) -ne 'updated'){throw 'Repair failed to apply the latest client patch.'}
 if((Get-Content (Join-Path $game '.mh-client-version.json') -Raw|ConvertFrom-Json).version -ne '1.0.1'){throw 'Repair did not record the patched version.'}
 Write-Output 'Repair restores the latest patched version.'
+$exe='UnrealEngine3/Binaries/Win64/MarvelHeroesOmega.exe';[IO.File]::WriteAllText((Join-Path $game $exe),'custom binary')
+@{paths=@($exe)}|ConvertTo-Json|Set-Content (Join-Path $game '.mh-protected-files.json')
+& (Get-Process -Id $PID).Path -NoProfile -File $runnerPath
+if($LASTEXITCODE -ne 0 -or [IO.File]::ReadAllText((Join-Path $game $exe)) -ne 'custom binary'){throw 'Explicitly protected executable was not preserved.'}
+Write-Output 'An explicitly protected executable remains untouched during repair.'

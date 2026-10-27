@@ -84,7 +84,7 @@ try {
   foreach($file in $expected.Values){
    if($file.path -notlike 'Client/*'){throw 'Invalid client repair path.'}
    $relative=$file.path.Substring(7);$target=Get-SafePath $gamePath $relative
-   if((Test-ProtectedClientFile $gamePath $relative) -and $relative -notmatch '(?i)(^|/)MarvelHeroesOmega\.exe$'){continue}
+   if(Test-ProtectedClientFile $gamePath $relative -AllowExecutableRepair){continue}
    if(-not(Test-Path -LiteralPath $target -PathType Leaf) -or (Get-Item -LiteralPath $target).Length -ne [long]$file.size -or (Get-FileHash -LiteralPath $target).Hash -ne $file.sha256){$mismatch++}
    $checked++;if($checked % 100 -eq 0){Set-TransferStatus "Checking game files ($checked/$($expected.Count))" $checked $expected.Count}
   }
@@ -107,7 +107,7 @@ try {
   foreach($file in $package.files){
    if(-not $isGame -and $file.path -notin $launcherFiles){throw 'Launcher package contains a protected file.'}
    if($isGame -and ($file.path -notlike 'Client/*' -or $file.path -match '(?i)(^|/)(Saved|SaveGames|Logs|Screenshots|\.mh[^/]*)(/|$)|\.(log|db)$')){throw 'Client update contains a protected file.'}
-   if($isGame -and (Test-ProtectedClientFile $gamePath $file.path.Substring(7)) -and -not ($Action -eq 'Repair' -and $file.path -match '(?i)(^|/)MarvelHeroesOmega\.exe$')){$preserved+=,$file.path.Substring(7)}
+   if($isGame -and (Test-ProtectedClientFile $gamePath $file.path.Substring(7) -AllowExecutableRepair:($Action -eq 'Repair'))){$preserved+=,$file.path.Substring(7)}
    $null=Get-SafePath $root $file.path
    if($paths.ContainsKey($file.path)){throw 'Duplicate package path.'};$paths[$file.path]=$true
    if([long]$file.size -lt 0){throw 'Invalid file size.'};$totalSize+=[long]$file.size
