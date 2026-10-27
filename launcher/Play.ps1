@@ -105,6 +105,7 @@ function Sync-UpdateState {
  if($script:available -and -not $script:busy){$ui.StatusText.Text='Update required before playing.';$ui.DetailText.Text='Select INSTALL UPDATE above. Play unlocks after installation completes.'}
 }
 function Set-Busy([bool]$Busy){$script:busy=$Busy;foreach($key in @('SettingsButton','AccountButton','FolderButton','LocateButton','RepairButton','UpdateButton')){$ui[$key].IsEnabled=-not $Busy};Sync-UpdateState}
+function Reset-ProgressDisplay {$ui.Progress.IsIndeterminate=$false;$ui.Progress.Value=0;$ui.PercentText.Text=''}
 function Select-GameFolder([bool]$Existing){
  $dialog=[System.Windows.Forms.FolderBrowserDialog]::new();$dialog.Description=if($Existing){'Select the folder containing your Marvel Heroes game'}else{'Choose a dedicated game installation folder'};$dialog.UseDescriptionForTitle=$true
  $dialog.SelectedPath=$saved.ClientPath
@@ -182,7 +183,7 @@ $workerTimer.Add_Tick({
   if(Test-Path $progressFile){try{$progressData=Read-SharedText $progressFile|ConvertFrom-Json;$ui.StatusText.Text=$progressData.message;$ui.Progress.IsIndeterminate=$progressData.percent -lt 0;if($progressData.percent -ge 0){$ui.Progress.Value=$progressData.percent;$ui.PercentText.Text=[string]$progressData.percent+'%'};if($progressData.total -gt 0){$ui.DetailText.Text=('{0:N1} MB / {1:N1} MB' -f ($progressData.done/1MB),($progressData.total/1MB))}}catch{}}
   return
  }
- $workerTimer.Stop();Set-Busy $false;$ui.Progress.IsIndeterminate=$false
+ $workerTimer.Stop();Set-Busy $false;Reset-ProgressDisplay
  $code=$script:worker.ExitCode
  if($script:workerAction -eq 'Launch' -and $code -eq 0){$window.Close();return}
  if($code -eq 10){$script:restart=$true;$window.Close();return}
@@ -203,6 +204,8 @@ if($ValidateOnly){
  Show-FirstTimeSetup
  Show-GameSettings
  if($ui.Count -ne 19 -or $script:images.Count -ne 2){throw 'Launcher UI is incomplete.'}
+ $ui.Progress.Value=99;$ui.PercentText.Text='99%';Reset-ProgressDisplay
+ if($ui.Progress.Value -ne 0 -or $ui.PercentText.Text -ne ''){throw 'Completed progress was not cleared.'}
  # Exercise the actual button gate, including failed checks and retries.
  foreach($case in @(
   @{verified=$false;available=$false;busy=$false;recovery=$false;enabled=$false},
