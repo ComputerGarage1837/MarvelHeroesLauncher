@@ -238,6 +238,14 @@ function Install-CameraControls([string]$GameRoot,[string]$DocumentsRoot=''){
    if($section.Length -and -not $section.EndsWith("`n")){$section+=$nl}
    foreach($line in $lines){$name=([regex]::Match($line,'Name="([^"]+)"')).Groups[1].Value;if($section -notmatch ('(?im)^\s*[.+]?Bindings=\(Name="'+[regex]::Escape($name)+'"')){$section+=$prefix+'('+$line+')'+$nl}}
   }
+  # An independent toggle provides the mod's mouse-camera mode without changing movement or ability keys.
+  if($section -notmatch '(?im)^\s*[.!+]?Bindings=\(Name="F7"'){
+   $prefix=if($section -match '(?m)^\.Bindings=') {'.Bindings='} else {'Bindings='}
+   $nl=if($text.Contains("`r`n")){"`r`n"}else{"`n"}
+   if($section.Length -and -not $section.EndsWith("`n")){$section+=$nl}
+   $lines=@('Name="KBM_CamX", Command="Axis GamepadRawJoyLookRight Speed=0.1667"','Name="KBM_CamY", Command="Axis GamepadRawJoyLookUp Speed=-0.1667"','Name="KBM_None", Command=""','Name="KBM_ToggleOn", Command="SetBind MouseX KBM_CamX | SetBind MouseY KBM_CamY | SetBind F7 KBM_ToggleOff"','Name="KBM_ToggleOff", Command="SetBind MouseX KBM_None | SetBind MouseY KBM_None | SetBind F7 KBM_ToggleOn"','Name="F7", Command="KBM_ToggleOn"')
+   foreach($line in $lines){$name=([regex]::Match($line,'Name="([^"]+)"')).Groups[1].Value;if($section -notmatch ('(?im)^\s*[.!+]?Bindings=\(Name="'+[regex]::Escape($name)+'"')){$section+=$prefix+'('+$line+')'+$nl}}
+  }
   $updated=$text.Substring(0,$match.Groups[2].Index)+$section+$text.Substring($match.Groups[2].Index+$match.Groups[2].Length)
   $updated=[regex]::Replace($updated,'(?m)^(?!\s*;)([^\r\n]*Name="XboxTypeS_RightShoulder"[^\r\n]*Command=")TargetLockOnToggle("[^\r\n]*)(?=\r?$)','$1TargetLockOnToggle | VFXToggleOtherPlayerPowerEffects | OnRelease VFXTogglePowerDecals$2')
   if($updated -ceq $text){continue}
