@@ -1,0 +1,17 @@
+$ErrorActionPreference='Stop'
+Write-Host 'Marvel Heroes camera diagnostic'
+$game=Get-Process MarvelHeroesOmega -ErrorAction SilentlyContinue | Select-Object -First 1
+if(-not $game){Write-Host 'GAME: not running. Start the game through the launcher and run this again.';exit 1}
+try {$exe=$game.Path;if(-not $exe){throw 'Game path unavailable'};$root=[IO.Path]::GetFullPath((Join-Path (Split-Path $exe) '../../..'))}catch{Write-Host 'GAME: running, but its installation path cannot be read.';exit 1}
+$dll=Join-Path $root 'UnrealEngine3/Binaries/Win64/winmm.dll';$upk=Join-Path $root 'UnrealEngine3/MarvelGame/CookedPCConsole/MarvelGame.upk'
+Write-Host "GAME: running"
+foreach($item in @(@{name='Camera loader';path=$dll;hash='5698BF1BFFCF7BA4EBA8A49083B8CC4BD0A5ABDDEC965537CDC642AAC3CDA5B0'},@{name='Camera game file';path=$upk;hash='D130440FE8FBBDD80EC35EE6D53125909BE892132F3D99E4E3CE58FE25967135'})){
+ if(-not(Test-Path -LiteralPath $item.path)){Write-Host "$($item.name): missing";continue}
+ $hash=(Get-FileHash -LiteralPath $item.path).Hash
+ if($hash -eq $item.hash){Write-Host "$($item.name): correct"}else{Write-Host "$($item.name): different from expected"}
+}
+try{$mods=@($game.Modules|Where-Object {$_.ModuleName -ieq 'winmm.dll'});$local=@($mods|Where-Object {$_.FileName -ieq $dll});if($local.Count){Write-Host 'Camera loader in game: loaded'}elseif($mods.Count){Write-Host 'Camera loader in game: Windows version loaded instead'}else{Write-Host 'Camera loader in game: not found'}}catch{Write-Host 'Camera loader in game: could not inspect'}
+$docs=[Environment]::GetFolderPath('MyDocuments')
+$inputs=@(@{name='Game default';path=(Join-Path $root 'UnrealEngine3/MarvelGame/Config/DefaultInput.ini')},@{name='Player input';path=(Join-Path $docs 'My Games/Marvel Heroes/MarvelGame/Config/MarvelInput.ini')},@{name='Player input settings';path=(Join-Path $docs 'My Games/Marvel Heroes/MarvelGame/Config/MarvelInputUserSettings.ini')})
+foreach($inputFile in $inputs){if(-not(Test-Path -LiteralPath $inputFile.path)){Write-Host "$($inputFile.name): not present";continue};$s=Get-Content -LiteralPath $inputFile.path -Raw;$middle=[regex]::Matches($s,'(?im)^\s*[.+]?Bindings=\(Name="MiddleMouseButton"[^\r\n]*');$ours=@($middle|Where-Object Value -match 'KBM_MMB').Count;$custom=$middle.Count-$ours;$cam=($s -match 'Name="KBM_CamX"') -and ($s -match 'Name="KBM_CamY"');$rb=($s -match 'Name="XboxTypeS_RightShoulder"[^\r\n]*VFXToggleOtherPlayerPowerEffects');Write-Host "$($inputFile.name): mouse=$ours other-middle=$custom camera-aliases=$cam controller-RB=$rb"}
+Write-Host 'Diagnostic complete. Copy the lines above back into the chat.'
