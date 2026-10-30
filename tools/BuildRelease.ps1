@@ -2,6 +2,9 @@ param([Parameter(Mandatory)][string]$Repository,[Parameter(Mandatory)][version]$
 $ErrorActionPreference='Stop'
 if($Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'){throw 'Use owner/repository.'}
 $source=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../launcher'))
+$notes=@(Get-Content -LiteralPath (Join-Path $PSScriptRoot '../release-notes.json') -Raw|ConvertFrom-Json)
+$launcherNotes=@($notes|Where-Object {$_.component -eq 'launcher' -and $_.version -eq "$Version"})
+if($launcherNotes.Count -ne 1 -or -not @($launcherNotes[0].changes|Where-Object {$_ -is [string] -and -not [string]::IsNullOrWhiteSpace($_)}).Count){throw "Add accurate launcher changes for version $Version to release-notes.json."}
 $out=[IO.Path]::GetFullPath($OutputDirectory);New-Item -ItemType Directory $out -Force|Out-Null
 $stage=Join-Path $out ('build-'+[guid]::NewGuid().ToString('N'));New-Item -ItemType Directory $stage|Out-Null
 $names=@('Play.ps1','StartGame.ps1','CreateAccount.ps1','Update.ps1','UpdateCore.ps1','Transfer.ps1','Launcher.xaml','Assets/avengers-endgame.jpg','Assets/avengers-infinity-war.jpg','Assets/CREDITS.txt','Play.bat','Launch-Portable.bat','StartClient.bat','StartClientAutoLogin.bat','READ-ME.txt')
@@ -12,9 +15,11 @@ Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -Force
 . (Join-Path $source 'UpdateCore.ps1')
 [void](Ensure-NativeLauncher $stage)
 $packages=@()
+$previousKeys=@{}
 if(Test-Path (Join-Path $out 'previous-manifest.json')){
  $previous=Get-Content (Join-Path $out 'previous-manifest.json') -Raw|ConvertFrom-Json
  $packages+=@($previous.packages|Where-Object component -in @('client','client-full'))
+ foreach($item in $packages){$previousKeys[([string]$item.component+':'+[string]$item.version)]=$true}
  if(-not $MetadataOnly){foreach($package in $packages){$assets=if($package.PSObject.Properties['parts']){@($package.parts.asset)}else{@($package.asset)};foreach($assetName in $assets){if(-not(Test-Path (Join-Path $out $assetName))){throw "Missing retained client asset: $assetName"}}}}
 }
 foreach($descriptor in Get-ChildItem $out -Filter 'client-*.package.json'){
@@ -45,6 +50,13 @@ if($fullPackages.Count -eq 1){
  $packages=@($packages|Where-Object component -ne 'client')+@($chain)
 }
 foreach($package in $packages){
+ $match=@($notes|Where-Object {$_.component -eq $package.component -and $_.version -eq $package.version})
+ if($match.Count -gt 1){throw "Duplicate changelog for $($package.component) $($package.version)."}
+ if($match.Count -eq 1){$package|Add-Member -NotePropertyName changes -NotePropertyValue @($match[0].changes) -Force}
+ $key=[string]$package.component+':'+[string]$package.version
+ if(-not $previousKeys.ContainsKey($key) -and (-not $package.PSObject.Properties['changes'] -or -not @($package.changes|Where-Object {$_ -is [string] -and -not [string]::IsNullOrWhiteSpace($_)}).Count)){throw "Add accurate changes to the new $key package descriptor."}
+}
+foreach($package in $packages){
  $checkAssets=if($package.PSObject.Properties['parts']){@($package.parts)}else{@([pscustomobject]@{asset=$package.asset;sha256=$package.sha256})}
  foreach($entry in $checkAssets){
   if($entry.asset -notmatch '^[A-Za-z0-9_.-]+$'){throw 'Unsafe client asset name.'}
@@ -56,7 +68,8 @@ foreach($package in $packages){
  }
 }
 $packages=@($packages|Sort-Object {[version]$_.version})
-$packages+=@{component='launcher';version="$Version";asset=$asset;sha256=(Get-FileHash $archive).Hash.ToLowerInvariant();files=$files}
+$packages+=@{component='launcher';version="$Version";asset=$asset;sha256=(Get-FileHash $archive).Hash.ToLowerInvariant();files=$files;changes=@($launcherNotes[0].changes)}
+@($launcherNotes[0].changes|ForEach-Object {'- '+$_})|Set-Content (Join-Path $out 'release-notes.txt')
 @{schemaVersion=1;packages=$packages}|ConvertTo-Json -Depth 15|Set-Content (Join-Path $out 'update-manifest.json')
 @{repository=$Repository}|ConvertTo-Json|Set-Content (Join-Path $stage 'UpdateConfig.json')
 @{launcher="$Version";client='0.0.0'}|ConvertTo-Json|Set-Content (Join-Path $stage 'InstalledVersions.json')

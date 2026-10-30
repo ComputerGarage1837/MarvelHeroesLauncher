@@ -41,7 +41,7 @@ prepared, tested, and published before Install Game becomes available.
 Run with PowerShell 7 on a machine with the game files:
 
 ```powershell
-./tools/NewClientDistribution.ps1 -ClientFolder './client-baselines/live-20261025' -Version 1.0.0
+./tools/NewClientDistribution.ps1 -ClientFolder './client-baselines/live-20261025' -Version 1.0.0 -Changes 'Initial game installation.'
 ```
 
 The folder must contain the Win64 executable somewhere beneath it. The tool packages game files and default configuration, excludes saved data/logs, and splits the ZIP into 1 GiB release assets. Large individual game files are supported through Zip64. The unsplit ZIP is a local build artifact and must not be uploaded.
@@ -55,7 +55,7 @@ For large initial uploads, `tools/PublishClientAssets.ps1` streams the parts to 
 Put only changed files in a folder with paths relative to the existing game root. Keep a copy of the **previous** client version for baseline hashes:
 
 ```powershell
-./tools/NewClientPatch.ps1 -ChangedFiles 'D:\PatchFiles' -PreviousClient './client-baselines/live-20261025' -FromVersion 1.0.0 -Version 1.0.1
+./tools/NewClientPatch.ps1 -ChangedFiles 'D:\PatchFiles' -PreviousClient './client-baselines/live-20261025' -FromVersion 1.0.0 -Version 1.0.1 -Changes 'Describe the actual player-visible change.'
 ```
 
 Upload the generated `client-*.zip` and `.package.json` to the `client-patches` prerelease, then publish the next launcher release. Retain every patch in the chain so players can catch up from earlier versions. Patches add/replace files; deletion patches are not supported. The builder excludes configuration files from patches. Full installations can include the original default configuration.
@@ -65,10 +65,14 @@ Upload the generated `client-*.zip` and `.package.json` to the `client-patches` 
 ```powershell
 ./tests/Update.Tests.ps1
 pwsh -STA -File ./launcher/Play.ps1 -ValidateOnly
-./tools/BuildRelease.ps1 -Repository ComputerGarage1837/MarvelHeroesLauncher -Version 1.1.1
+./tools/BuildRelease.ps1 -Repository ComputerGarage1837/MarvelHeroesLauncher -Version 1.3.12 -MetadataOnly
 ```
 
 Launcher settings are per installation. Game patch state is stored in `.mh-client-version.json` inside the selected game folder. `.mh-updates` holds client download cache, staging and rollback copies. `.updates` holds launcher equivalents. These are not part of player save data; character progress remains on the server.
+
+## Update changelogs
+
+Every new client patch or full installation must include `-Changes` with accurate, player-facing descriptions of what that package actually changes. Before publishing a launcher release, add an entry for its exact version to `release-notes.json`; release preparation rejects a new version without notes. The launcher shows the notes for each pending package, or the latest available notes when already up to date. Legacy packages without recorded notes show a clear unavailable message. Update the notes when the contents change; do not describe unverified fixes as confirmed or copy generic release text.
 
 The retired release used a separate 1.52.0.1700 numbering scheme. Once the 1.0 baseline is published, existing installs using that scheme are adopted only after their game files match the current release. If they differ, the launcher offers verification and repair instead of silently replacing them. Future patches use versions such as 1.0.1 and compare changed files against their expected baseline hashes before replacement.
 

@@ -1,6 +1,7 @@
-param([Parameter(Mandatory)][string]$ClientFolder,[version]$Version='1.52.0.1700',[string]$OutputDirectory=(Join-Path $PSScriptRoot '../dist'),[long]$PartSize=1GB)
+param([Parameter(Mandatory)][string]$ClientFolder,[version]$Version='1.52.0.1700',[Parameter(Mandatory)][string[]]$Changes,[string]$OutputDirectory=(Join-Path $PSScriptRoot '../dist'),[long]$PartSize=1GB)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../launcher/UpdateCore.ps1')
+if(-not @($Changes|Where-Object {-not [string]::IsNullOrWhiteSpace($_)}).Count){throw 'Describe the changes included in this installation.'}
 if($PartSize -lt 1MB -or $PartSize -ge 2GB){throw 'Part size must be between 1 MiB and 2 GiB.'}
 $source=[IO.Path]::GetFullPath($ClientFolder);$out=[IO.Path]::GetFullPath($OutputDirectory)
 if($out.StartsWith($source.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Output must be outside the client folder.'}
@@ -28,5 +29,5 @@ try{
   $parts+=@{asset=$name;size=(Get-Item $path).Length;sha256=(Get-FileHash $path).Hash.ToLowerInvariant()}
  }
 }finally{$inputFile.Dispose()}
-@{component='client-full';version="$Version";sha256=$hash;parts=$parts;files=$files}|ConvertTo-Json -Depth 10|Set-Content (Join-Path $out "client-full-$Version.package.json")
+@{component='client-full';version="$Version";sha256=$hash;parts=$parts;files=$files;changes=@($Changes|ForEach-Object {$_.Trim()})}|ConvertTo-Json -Depth 10|Set-Content (Join-Path $out "client-full-$Version.package.json")
 Write-Output "Full client prepared as $($parts.Count) parts. Upload the .part files and .package.json to the client-patches prerelease. Do not upload the unsplit ZIP."

@@ -39,8 +39,8 @@
   <Grid Grid.Row="2" Margin="32,4,32,18"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
    <Border x:Name="UpdateCard" Style="{StaticResource GlassCard}"><Grid Margin="20,17"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock x:Name="UpdateHeading" Text="LATEST UPDATES" Foreground="#D4AF62" FontSize="10" FontWeight="Bold"/>
-    <TextBlock x:Name="UpdateSummary" Grid.Row="1" Text="Checking for launcher and game updates…" FontSize="16" Margin="0,10,0,8"/>
-    <Button x:Name="UpdateButton" Grid.Row="2" Content="Check for updates" HorizontalAlignment="Left" Padding="14,7" FontSize="11"/>
+    <StackPanel Grid.Row="1" Margin="0,8,0,4"><TextBlock x:Name="UpdateSummary" Text="Checking for launcher and game updates…" FontSize="14"/><TextBlock x:Name="UpdateNotesPreview" Text="" FontSize="11" Foreground="#D4C8A9" Margin="0,5,0,0" TextTrimming="CharacterEllipsis" MaxHeight="30"/></StackPanel>
+    <WrapPanel Grid.Row="2"><Button x:Name="UpdateButton" Content="Check for updates" Padding="14,7" FontSize="11" Margin="0,0,8,0"/><Button x:Name="ChangelogButton" Content="View changelog" Padding="14,7" FontSize="11"/></WrapPanel>
    </Grid></Border>
    <Border Grid.Column="2" Style="{StaticResource GlassCard}"><Grid Margin="20,17"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <TextBlock Text="YOUR GAME LIBRARY" Foreground="#D4AF62" FontSize="10" FontWeight="Bold"/>

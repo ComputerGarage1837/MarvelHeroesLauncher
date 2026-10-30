@@ -57,7 +57,12 @@ if(-not $ValidateOnly){
 }
 [xml]$xaml=Get-Content (Join-Path $root 'Launcher.xaml') -Raw
 $reader=[Xml.XmlNodeReader]::new($xaml);$window=[Windows.Markup.XamlReader]::Load($reader)
-$ui=@{};foreach($name in @('SettingsButton','AccountButton','HeroImage','UpdateSummary','UpdateButton','GameLocation','FolderButton','LocateButton','RepairButton','StatusText','PercentText','Progress','DetailText','PlayButton','VersionLabel','UpdateNotice','UpdateHeading','UpdateCard','ConnectionButton')){$ui[$name]=$window.FindName($name)}
+$ui=@{};foreach($name in @('SettingsButton','AccountButton','HeroImage','UpdateSummary','UpdateNotesPreview','ChangelogButton','UpdateButton','GameLocation','FolderButton','LocateButton','RepairButton','StatusText','PercentText','Progress','DetailText','PlayButton','VersionLabel','UpdateNotice','UpdateHeading','UpdateCard','ConnectionButton')){$ui[$name]=$window.FindName($name)}
+$script:changelog='Check for updates to see what has changed.'
+$ui.ChangelogButton.Add_Click({
+ $dialog=[Windows.Window]::new();$dialog.Title='Marvel Heroes — Changelog';$dialog.Owner=$window;$dialog.WindowStartupLocation='CenterOwner';$dialog.Width=570;$dialog.Height=420;$dialog.Background=[Windows.Media.Brushes]::Black;$dialog.Foreground=[Windows.Media.Brushes]::White
+ $body=[Windows.Controls.TextBox]::new();$body.Text=$script:changelog;$body.IsReadOnly=$true;$body.TextWrapping='Wrap';$body.VerticalScrollBarVisibility='Auto';$body.Background=[Windows.Media.Brushes]::Black;$body.Foreground=[Windows.Media.Brushes]::White;$body.BorderThickness=[Windows.Thickness]::new(0);$body.Padding=[Windows.Thickness]::new(24);$body.FontSize=14;$dialog.Content=$body;[void]$dialog.ShowDialog()
+})
 $version=(Get-Content (Join-Path $root 'InstalledVersions.json') -Raw|ConvertFrom-Json).launcher;$ui.VersionLabel.Text='LAUNCHER '+$version
 $script:images=@();foreach($name in @('avengers-endgame.jpg','avengers-infinity-war.jpg')){$bitmap=[Windows.Media.Imaging.BitmapImage]::new();$bitmap.BeginInit();$bitmap.CacheOption='OnLoad';$bitmap.UriSource=[Uri]::new((Join-Path $root "Assets/$name"));$bitmap.EndInit();$bitmap.Freeze();$script:images+=,$bitmap}
 $ui.HeroImage.Source=$script:images[0];$script:filmIndex=0
@@ -192,7 +197,7 @@ $workerTimer.Add_Tick({
   if($script:workerAction -eq 'Check'){$ui.StatusText.Text='Cannot verify updates. Retry the update check to unlock Play.';$ui.UpdateSummary.Text='Could not check for updates. Try again later.'}
   else{$message=Get-Content $workerLog -Tail 1;if(-not $message){$message='Operation stopped. See .updates/error.txt for details.'};$ui.StatusText.Text=$message}
  } elseif($script:workerAction -eq 'Check'){
-  try{$result=Get-Content $workerLog -Raw|ConvertFrom-Json;$script:verified=$true;$script:recoveryRequired=$false;$script:available=$result.available;$script:fullAvailable=$result.fullAvailable;$ui.UpdateSummary.Text=if($result.available){'Available: '+$result.summary}elseif($result.needsBaseline){'Select Verify / repair to bring this game onto the current version.'}else{'You have the latest launcher and available patches.'};$ui.UpdateButton.Content=if($result.available){'Install updates'}else{'Check for updates'};$ui.StatusText.Text=if($result.needsBaseline){'Game files differ from the current release.'}elseif($script:installed){'Ready to assemble.'}elseif($result.fullAvailable){'Choose your installation folder, then select Install Game.'}else{'Use Locate existing game. Full download is coming soon.'}}catch{$ui.StatusText.Text='Unable to read update status. Retry to unlock Play.'}
+  try{$result=Get-Content $workerLog -Raw|ConvertFrom-Json;$script:verified=$true;$script:recoveryRequired=$false;$script:available=$result.available;$script:fullAvailable=$result.fullAvailable;$script:changelog=if($result.changelog){[string]$result.changelog}else{'No changelog is available for this update.'};$preview=@($script:changelog -split "`n"|Where-Object {$_ -match '^• '});$ui.UpdateNotesPreview.Text=if($preview.Count){$preview[0]}else{$script:changelog};$ui.UpdateSummary.Text=if($result.available){'Available: '+$result.summary}elseif($result.needsBaseline){'Select Verify / repair to bring this game onto the current version.'}else{'You have the latest launcher and available patches.'};$ui.UpdateButton.Content=if($result.available){'Install updates'}else{'Check for updates'};$ui.StatusText.Text=if($result.needsBaseline){'Game files differ from the current release.'}elseif($script:installed){'Ready to assemble.'}elseif($result.fullAvailable){'Choose your installation folder, then select Install Game.'}else{'Use Locate existing game. Full download is coming soon.'}}catch{$ui.StatusText.Text='Unable to read update status. Retry to unlock Play.'}
  } else{Refresh-Game;$ui.UpdateSummary.Text='Installation complete. Checking versions...';Start-Worker 'Check';return}
  $ui.DetailText.Text=(Get-ServerProfile $saved.Server).Notice
  Sync-UpdateState
@@ -203,7 +208,7 @@ Refresh-Game
 if($ValidateOnly){
  Show-FirstTimeSetup
  Show-GameSettings
- if($ui.Count -ne 19 -or $script:images.Count -ne 2){throw 'Launcher UI is incomplete.'}
+ if($ui.Count -ne 21 -or $script:images.Count -ne 2){throw 'Launcher UI is incomplete.'}
  $ui.Progress.Value=99;$ui.PercentText.Text='99%';Reset-ProgressDisplay
  if($ui.Progress.Value -ne 0 -or $ui.PercentText.Text -ne ''){throw 'Completed progress was not cleared.'}
  # Exercise the actual button gate, including failed checks and retries.
@@ -219,7 +224,7 @@ if($ValidateOnly){
   if($ui.PlayButton.IsEnabled -ne $case.enabled){throw 'Play update gate failed validation.'}
  }
  $script:busy=$false;$script:recoveryRequired=$false;$script:verified=-not $PreviewUpdate;$script:available=[bool]$PreviewUpdate
- if($PreviewUpdate){$ui.UpdateSummary.Text='A new launcher update is ready to install.';$ui.PlayButton.Content='PLAY'}
+ if($PreviewUpdate){$ui.UpdateSummary.Text='A new launcher update is ready to install.';$ui.UpdateNotesPreview.Text='• Added an update changelog.';$ui.PlayButton.Content='PLAY'}
  Sync-UpdateState
  $saved.Server='Live';Sync-ServerChoice
  if($PreviewPath -and -not $PreviewSetup -and -not $PreviewSettings){$window.WindowStartupLocation='Manual';$window.Left=-32000;$window.Top=-32000;$window.ShowInTaskbar=$false;$window.Show();$window.UpdateLayout();$render=[Windows.Media.Imaging.RenderTargetBitmap]::new([int]$window.ActualWidth,[int]$window.ActualHeight,96,96,[Windows.Media.PixelFormats]::Pbgra32);$render.Render($window);$encoder=[Windows.Media.Imaging.PngBitmapEncoder]::new();$encoder.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($render));$stream=[IO.File]::Create($PreviewPath);$encoder.Save($stream);$stream.Dispose();$window.Close()}

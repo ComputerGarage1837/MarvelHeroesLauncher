@@ -22,6 +22,7 @@ jobs:
           ./tests/PlayerExperience.Tests.ps1
           ./tests/NativeLauncher.Tests.ps1
           ./tests/CameraControls.Tests.ps1
+          ./tests/Changelog.Tests.ps1
           pwsh -NoProfile -STA -File ./launcher/Play.ps1 -ValidateOnly
           if ($LASTEXITCODE -ne 0) { throw 'Launcher validation failed' }
       - name: Prepare release
@@ -50,7 +51,7 @@ jobs:
         run: |
           $assets = @(Get-ChildItem dist -File | Where-Object { $_.Name -eq 'update-manifest.json' -or $_.Name -like 'launcher-*.zip' -or $_.Name -eq 'MarvelHeroesLauncher-Install.zip' } | ForEach-Object FullName)
           $previous = (gh api "repos/$env:REPOSITORY/releases/latest" | ConvertFrom-Json).tag_name
-          gh release create "v$env:RELEASE_VERSION" @assets --repo $env:REPOSITORY --title "Marvel Heroes Launcher $env:RELEASE_VERSION" --notes 'Launcher update with the latest available game installation and patch packages.' --draft
+          gh release create "v$env:RELEASE_VERSION" @assets --repo $env:REPOSITORY --title "Marvel Heroes Launcher $env:RELEASE_VERSION" --notes-file dist/release-notes.txt --draft
           if ($LASTEXITCODE -ne 0) { throw 'Could not create draft release.' }
           $manifest = Get-Content dist/update-manifest.json -Raw | ConvertFrom-Json
           New-Item -ItemType Directory dist/one-part -Force | Out-Null

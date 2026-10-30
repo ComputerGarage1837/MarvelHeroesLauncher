@@ -1,5 +1,20 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+function Get-UpdateChangelogText($Packages){
+ $sections=@()
+ foreach($package in @($Packages)){
+  $label=switch([string]$package.component){'launcher'{'Launcher'}'client'{'Game'}'client-full'{'Game installation'}default{'Update'}}
+  $changes=if($package.PSObject.Properties['changes']){@($package.changes|Where-Object {$_ -is [string] -and -not [string]::IsNullOrWhiteSpace($_)}|ForEach-Object {$_.Trim()})}else{@()}
+  $body=if(@($changes).Count){(($changes|ForEach-Object {'• '+$_}) -join "`n")}else{'No changelog is available for this update.'}
+  $sections+=($label+' '+[string]$package.version+"`n"+$body)
+ }
+ if(-not $sections.Count){return 'No changelog is available for this update.'}
+ return ($sections -join "`n`n")
+}
+function Select-UpdateChangelogPackages($Pending,$All){
+ if(@($Pending).Count){return @($Pending)}
+ return @($All|Where-Object {$_.PSObject.Properties['changes'] -and $_.component -in @('client','launcher')}|Select-Object -Last 2)
+}
 function Ensure-NativeLauncher([string]$Root){
  $source=@'
 using System;

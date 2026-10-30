@@ -99,7 +99,10 @@ try {
   if($package.component -eq 'client' -and [version]$package.fromVersion -ne $current){throw 'Client patch baseline does not match this installation.'}
   $planned[$package.component]=[string]$package.version;$pending+=,$package
  }
- if($Action -eq 'Check'){@{available=($pending.Count -gt 0);fullAvailable=($full.Count -eq 1);gameInstalled=$gameInstalled;needsBaseline=$needsBaseline;summary=(($pending|ForEach-Object {"$($_.component) $($_.version)"}) -join ', ');release=[string]$release.name}|ConvertTo-Json -Compress;exit 0}
+ if($Action -eq 'Check'){
+  $notesPackages=Select-UpdateChangelogPackages $pending $manifest.packages
+  @{available=($pending.Count -gt 0);fullAvailable=($full.Count -eq 1);gameInstalled=$gameInstalled;needsBaseline=$needsBaseline;summary=(($pending|ForEach-Object {"$($_.component) $($_.version)"}) -join ', ');release=[string]$release.name;changelog=(Get-UpdateChangelogText $notesPackages)}|ConvertTo-Json -Compress;exit 0
+ }
  if($Action -eq 'Repair'){
   $expected=@{};foreach($package in $pending){if($package.component -in @('client-full','client')){foreach($file in $package.files){$expected[$file.path]=$file}}}
   $mismatch=0;$checked=0
