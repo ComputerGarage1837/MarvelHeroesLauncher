@@ -11,6 +11,7 @@ $text=Get-UpdateChangelogText (Select-UpdateChangelogPackages @() @($legacy,$cli
 Check ($text -match 'Added a costume' -and $text -match 'Added a changelog') 'Up-to-date players can see recent game and launcher notes'
 Check ((Get-UpdateChangelogText @($legacy)) -match 'No changelog is available for this update') 'Legacy updates do not invent notes'
 Check ((Get-UpdateChangelogText @($legacy,$client)) -match 'No changelog is available for this update') 'Missing notes remain visible when other pending updates have notes'
+Check ((Get-UpdateChangelogText $null) -eq 'No changelog is available for this update.') 'Empty legacy manifests do not break update checks'
 $future=Join-Path $PSScriptRoot ('notes-check-'+[guid]::NewGuid().ToString('N'));New-Item -ItemType Directory $future|Out-Null
 try{
  $failed=$false
