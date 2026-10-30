@@ -1,6 +1,14 @@
 [
   {
     "component": "client",
+    "version": "1.0.3",
+    "changes": [
+      "Updated the store to display Eternity Splinter prices and balances.",
+      "Removed the obsolete Add G button from the store."
+    ]
+  },
+  {
+    "component": "client",
     "version": "1.0.2",
     "changes": [
       "Added Emma Frost's Dark Reign costume as a separate store and wardrobe option.",

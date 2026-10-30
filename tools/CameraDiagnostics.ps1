@@ -9,7 +9,7 @@ Write-Host ('GAME: '+$(if($game){'running'}else{'offline file inspection; execut
 foreach($item in @(@{name='Camera loader';path=$dll;hash='5698BF1BFFCF7BA4EBA8A49083B8CC4BD0A5ABDDEC965537CDC642AAC3CDA5B0'},@{name='Camera game file';path=$upk;hash='D130440FE8FBBDD80EC35EE6D53125909BE892132F3D99E4E3CE58FE25967135'},@{name='Camera settings data';path=$sip;hash='8064737DA039B0BBBE25D9A65A2DC3C321F6D60D7F8D4B0664335F5345918F1E'})){
  if(-not(Test-Path -LiteralPath $item.path)){Write-Host "$($item.name): missing";continue}
  $hash=(Get-FileHash -LiteralPath $item.path).Hash
- if($hash -eq $item.hash){Write-Host "$($item.name): correct"}else{Write-Host "$($item.name): different from expected"}
+ if($hash -eq $item.hash -or ($item.name -eq 'Camera game file' -and $hash -eq '8AA1B3A5FB27B2F096F0B7D6F2BA9DE9F38D1C78EEFD797F3DB8E30FB4A195DB')){Write-Host "$($item.name): correct"}else{Write-Host "$($item.name): different from expected"}
 }
 try{$mods=@($game.Modules|Where-Object {$_.ModuleName -ieq 'winmm.dll'});$local=@($mods|Where-Object {$_.FileName -ieq $dll});if($local.Count){Write-Host 'Camera loader in game: loaded'}elseif($mods.Count){Write-Host 'Camera loader in game: Windows version loaded instead'}else{Write-Host 'Camera loader in game: not found'}}catch{Write-Host 'Camera loader in game: could not inspect'}
 try {
@@ -87,3 +87,4 @@ public static class MHCameraInputObservation {
 }
 Write-Host 'Backspace has no plain gameplay binding in the stock game default. A missing Backspace Bindings entry alone is not evidence of broken text input.'
 Write-Host 'Do not paste account credentials or the full game command line. Copy the diagnostic lines above back into the chat.'
+
