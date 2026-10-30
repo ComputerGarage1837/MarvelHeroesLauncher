@@ -1,6 +1,13 @@
 [
   {
     "component": "client",
+    "version": "1.0.5",
+    "changes": [
+      "Enabled the store to load custom costume artwork packages, including Emma Frost Dark Reign."
+    ]
+  },
+  {
+    "component": "client",
     "version": "1.0.4",
     "changes": [
       "Updated store and gifting currency icons to represent Eternity Splinters."
