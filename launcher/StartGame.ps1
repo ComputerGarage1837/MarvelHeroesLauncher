@@ -23,6 +23,8 @@ try{
  if(Test-Path -LiteralPath $lockPath){$guard=[IO.File]::Open($lockPath,'Open','Read','None')}
  $camera=Install-CameraControls $folder
  if($camera){Write-Output $camera.Message}
+ $storeArtwork=Install-SplinterStoreGraphics $folder
+ if($storeArtwork){Write-Output $storeArtwork}
  Write-Output 'Starting Marvel Heroes Omega...'
  $game=Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.DirectoryName -ArgumentList $clientArgs -PassThru
  for($i=0;$i -lt 240;$i++){
@@ -41,3 +43,4 @@ try{
  throw 'The game is still starting. The launcher will stay open; check the game window.'
 }finally{if($guard){$guard.Dispose()}}
 }catch{Write-Output $_.Exception.Message;exit 1}
+

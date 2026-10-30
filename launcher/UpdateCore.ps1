@@ -418,3 +418,26 @@ function Install-Transaction([string]$Root,[string]$Stage,[string]$Transaction,$
 
 
 
+
+# Install the appropriate store artwork without replacing other HUD customizations.
+function Install-SplinterStoreGraphics([string]$GameRoot) {
+ $relative='UnrealEngine3/MarvelGame/CookedPCConsole/MarvelHUD_SF.upk'
+ $target=Get-SafePath $GameRoot $relative
+ $payloadRoot=Get-SafePath $GameRoot 'MarvelStoreGraphics'
+ if(-not (Test-Path -LiteralPath $payloadRoot -PathType Container)){return 'Store artwork update is not installed.'}
+ if(-not (Test-Path -LiteralPath $target -PathType Leaf)){return 'Store artwork could not be updated because the HUD file was not found.'}
+ $variants=@(
+  @{base='35CF451EF2480DD6E66A5F23FA5DFC4B85ABF2D7ED61198A01DD91E9FF0A387B';result='9A18B3D499FBC8492BDFDB1DAFFB54846865EFEC923576645614FC1B84DCE76E';payload='standard.upk'},
+  @{base='17D5F7F513212EB5BB2B606C71ABD802E1657357405D824E797C9C1637E76346';result='E1C82403E2F764351E7B26C7EC3CA82D4DD7654B38C2D32A6607E1A81266CF97';payload='wardrobe.upk'}
+ )
+ $hash=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
+ if(@($variants|Where-Object {$_.result -eq $hash}).Count){return 'Splinter store artwork is ready.'}
+ $match=@($variants|Where-Object {$_.base -eq $hash})
+ if($match.Count -ne 1){return 'Store artwork was preserved because this HUD contains other custom changes.'}
+ $variant=$match[0];$payload=Get-SafePath $payloadRoot $variant.payload;Assert-Hash $payload $variant.result
+ $transaction=Get-SafePath $GameRoot ('.mh-updates/transaction-'+[Guid]::NewGuid().ToString('N'))
+ $stage=Join-Path $transaction 'stage';$staged=Get-SafePath $stage $relative;[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($staged))|Out-Null
+ [IO.File]::Copy($payload,$staged,$false)
+ Install-Transaction $GameRoot $stage $transaction @([pscustomobject]@{path=$relative;sha256=$variant.result;baseSha256=$variant.base;protectLocal=$true})
+ return 'Splinter store artwork is ready.'
+}
